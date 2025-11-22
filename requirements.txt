@@ -1,4 +1,4 @@
-discord.py
+py-cord
 ccxt
 pandas
 pandas_ta
@@ -6,3 +6,6 @@ python-dotenv
 aiohttp
 sqlalchemy
 aiosqlite
+mplfinance
+scipy
+numpy

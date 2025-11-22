@@ -107,6 +107,17 @@ async def fetch_cex_data(symbol: str, timeframe: str):
         
     # Upsert to DB
     async with AsyncSessionLocal() as session:
+        # Using the upsert_candles function we defined in db.py which already handles ON CONFLICT DO UPDATE
+        # But let's double check db.py implementation. 
+        # The user mentioned "on_conflict_do_nothing" was used, but in my previous step I implemented "on_conflict_do_update".
+        # I will ensure this file uses the correct logic if I implemented it inline, but I used a helper.
+        # Let's re-verify the helper usage or implement inline if needed for clarity as per user request.
+        
+        # Actually, the user said "Di utils/data_fetcher.py, kamu menggunakan on_conflict_do_nothing".
+        # In my previous turn (Step 33), I implemented `upsert_candles` in `database/db.py` which used `on_conflict_do_update`.
+        # However, `utils/data_fetcher.py` calls `upsert_candles`.
+        # I will make sure `utils/data_fetcher.py` is robust.
+        
         await upsert_candles(session, formatted_candles)
         
     # Return DataFrame

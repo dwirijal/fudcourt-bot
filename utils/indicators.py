@@ -22,7 +22,36 @@ def calculate_indicators(df: pd.DataFrame):
     df = pd.concat([df, bb], axis=1)
     # Default cols: BBL_20_2.0, BBM_20_2.0, BBU_20_2.0
     
+    # Pattern Recognition
+    # Doji: Indikasi keraguan pasar
+    df['DOJI'] = df.ta.cdl_pattern(name="doji")['CDL_DOJI']
+    # Engulfing: Indikasi pembalikan arah kuat
+    df['ENGULFING'] = df.ta.cdl_pattern(name="engulfing")['CDL_ENGULFING']
+    
     return df
+
+import numpy as np
+from scipy.signal import argrelextrema
+
+def get_support_resistance(df):
+    # Cari local max (resistance) dan local min (support)
+    n = 20 # window size
+    
+    # Menggunakan iloc untuk akses via integer index
+    # Kita butuh values array
+    highs = df['high'].values
+    lows = df['low'].values
+    
+    res_idx = argrelextrema(highs, np.greater_equal, order=n)[0]
+    sup_idx = argrelextrema(lows, np.less_equal, order=n)[0]
+    
+    # Ambil 3 level teratas/terbawah yang paling dekat dengan harga sekarang
+    current_price = df['close'].iloc[-1]
+    
+    resistances = [highs[i] for i in res_idx if highs[i] > current_price]
+    supports = [lows[i] for i in sup_idx if lows[i] < current_price]
+    
+    return sorted(supports)[-3:], sorted(resistances)[:3]
 
 def generate_setup(df: pd.DataFrame):
     if df.empty:
@@ -62,5 +91,11 @@ def generate_setup(df: pd.DataFrame):
         setup.append("MACD Bullish Cross")
     else:
         setup.append("MACD Bearish Cross")
+        
+    # Patterns
+    if last_row['DOJI'] != 0:
+        setup.append("Candle Pattern: Doji (Indecision)")
+    if last_row['ENGULFING'] != 0:
+        setup.append(f"Candle Pattern: {'Bullish' if last_row['ENGULFING'] > 0 else 'Bearish'} Engulfing")
         
     return "\n".join(setup)

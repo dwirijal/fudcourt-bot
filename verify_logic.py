@@ -24,6 +24,20 @@ async def test_cex():
         df = calculate_indicators(df)
         setup = generate_setup(df)
         print(f"Setup: {setup}")
+        
+        from utils.indicators import get_support_resistance
+        supports, resistances = get_support_resistance(df)
+        print(f"Supports: {supports}")
+        print(f"Resistances: {resistances}")
+        
+        from utils.charting import generate_chart
+        print("Generating chart...")
+        try:
+            buf = generate_chart(df, "ETH/USDT", "1h")
+            print(f"Chart generated successfully, size: {buf.getbuffer().nbytes} bytes")
+        except Exception as e:
+            print(f"Chart generation failed: {e}")
+            
         print("Last 5 rows:")
         print(df.tail())
 
