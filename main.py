@@ -2,8 +2,13 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+import sys
 from dotenv import load_dotenv
 from database.db import init_db
+
+# Fix for Windows async DNS resolution issue
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 load_dotenv()
 

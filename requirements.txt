@@ -1,11 +1,11 @@
-py-cord
+discord.py
 ccxt
 pandas
-pandas_ta
 python-dotenv
 aiohttp
 sqlalchemy
 aiosqlite
-mplfinance
 scipy
 numpy
+mplfinance
+matplotlib

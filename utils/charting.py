@@ -13,7 +13,7 @@ def generate_chart(df: pd.DataFrame, symbol: str, timeframe: str):
 
     # Setup Style dengan warna Antigravity (#ff7400)
     mc = mpf.make_marketcolors(up='#ff7400', down='#1a1a1a', inherit=True)
-    s = mpf.make_mpf_style(marketcolors=mc, style='nightclouds', gridstyle=':')
+    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':')
 
     # Siapkan buffer untuk menyimpan gambar
     buf = io.BytesIO()

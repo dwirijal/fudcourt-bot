@@ -1,33 +1,113 @@
 import pandas as pd
-import pandas_ta as ta
+import numpy as np
+
+def calculate_rsi(prices, window=14):
+    """Calculate RSI indicator"""
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def calculate_ema(prices, window):
+    """Calculate EMA indicator"""
+    return prices.ewm(span=window, adjust=False).mean()
+
+def calculate_macd(prices, fast=12, slow=26, signal=9):
+    """Calculate MACD indicator"""
+    ema_fast = calculate_ema(prices, fast)
+    ema_slow = calculate_ema(prices, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = calculate_ema(macd_line, signal)
+    histogram = macd_line - signal_line
+
+    return pd.DataFrame({
+        'MACD_12_26_9': macd_line,
+        'MACDs_12_26_9': signal_line,
+        'MACDh_12_26_9': histogram
+    })
+
+def calculate_bollinger_bands(prices, window=20, num_std=2):
+    """Calculate Bollinger Bands"""
+    sma = prices.rolling(window=window).mean()
+    std = prices.rolling(window=window).std()
+    upper_band = sma + (std * num_std)
+    lower_band = sma - (std * num_std)
+
+    return pd.DataFrame({
+        'BBM_20_2.0': sma,
+        'BBU_20_2.0': upper_band,
+        'BBL_20_2.0': lower_band
+    })
+
+def detect_doji(open_price, high, low, close, threshold=0.1):
+    """Simple doji pattern detection"""
+    body_size = abs(close - open_price)
+    range_size = high - low
+    if range_size == 0:
+        return 0
+    return 1 if (body_size / range_size) < threshold else 0
+
+def detect_engulfing(open_prices, high_prices, low_prices, close_prices):
+    """Simple engulfing pattern detection"""
+    if len(open_prices) < 2:
+        return 0
+
+    current = len(open_prices) - 1
+    prev = current - 1
+
+    prev_body = close_prices.iloc[prev] - open_prices.iloc[prev]
+    current_body = close_prices.iloc[current] - open_prices.iloc[current]
+
+    # Bullish engulfing
+    if prev_body < 0 and current_body > 0:
+        if open_prices.iloc[current] <= close_prices.iloc[prev] and \
+           close_prices.iloc[current] >= open_prices.iloc[prev]:
+            return 1
+
+    # Bearish engulfing
+    if prev_body > 0 and current_body < 0:
+        if open_prices.iloc[current] >= close_prices.iloc[prev] and \
+           close_prices.iloc[current] <= open_prices.iloc[prev]:
+            return -1
+
+    return 0
 
 def calculate_indicators(df: pd.DataFrame):
-    # Ensure timestamp is datetime if needed, but pandas_ta works with whatever index usually
-    # But for safety let's keep it simple
-    
+    """Calculate all technical indicators"""
+    if df.empty or len(df) < 50:
+        return df
+
     # RSI
-    df['RSI'] = ta.rsi(df['close'], length=14)
-    
+    df['RSI'] = calculate_rsi(df['close'])
+
     # MACD
-    macd = ta.macd(df['close'])
-    df = pd.concat([df, macd], axis=1)
-    # Rename columns for easier access if needed, but default names are MACD_12_26_9, MACDh_12_26_9, MACDs_12_26_9
-    
+    macd_data = calculate_macd(df['close'])
+    df = pd.concat([df, macd_data], axis=1)
+
     # EMA
-    df['EMA_50'] = ta.ema(df['close'], length=50)
-    df['EMA_200'] = ta.ema(df['close'], length=200)
-    
+    df['EMA_50'] = calculate_ema(df['close'], 50)
+    df['EMA_200'] = calculate_ema(df['close'], 200)
+
     # Bollinger Bands
-    bb = ta.bbands(df['close'], length=20)
-    df = pd.concat([df, bb], axis=1)
-    # Default cols: BBL_20_2.0, BBM_20_2.0, BBU_20_2.0
-    
+    bb_data = calculate_bollinger_bands(df['close'])
+    df = pd.concat([df, bb_data], axis=1)
+
     # Pattern Recognition
-    # Doji: Indikasi keraguan pasar
-    df['DOJI'] = df.ta.cdl_pattern(name="doji")['CDL_DOJI']
-    # Engulfing: Indikasi pembalikan arah kuat
-    df['ENGULFING'] = df.ta.cdl_pattern(name="engulfing")['CDL_ENGULFING']
-    
+    df['DOJI'] = 0
+    df['ENGULFING'] = 0
+
+    for i in range(1, len(df)):
+        df.loc[df.index[i], 'DOJI'] = detect_doji(
+            df['open'].iloc[i], df['high'].iloc[i],
+            df['low'].iloc[i], df['close'].iloc[i]
+        )
+        df.loc[df.index[i], 'ENGULFING'] = detect_engulfing(
+            df['open'].iloc[:i+1], df['high'].iloc[:i+1],
+            df['low'].iloc[:i+1], df['close'].iloc[:i+1]
+        )
+
     return df
 
 import numpy as np
