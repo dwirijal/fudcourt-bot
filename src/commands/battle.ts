@@ -1,9 +1,7 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db';
 import { renderBattleScene, BattleState } from '../utils/CanvasUtils';
 import { getMonster } from '../utils/monsters';
-
-const prisma = new PrismaClient();
 
 export const data = new SlashCommandBuilder()
     .setName('battle')

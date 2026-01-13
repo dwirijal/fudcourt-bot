@@ -1,7 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../db';
 
 export const data = new SlashCommandBuilder()
     .setName('profile')
