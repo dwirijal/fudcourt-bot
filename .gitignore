@@ -1,3 +1,8 @@
+# Node.js / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+
 # Environment variables
 .env
 .env.local
