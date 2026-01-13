@@ -1,3 +1,4 @@
+
 import { CommandInteraction, SlashCommandBuilder, EmbedBuilder, ChatInputCommandInteraction } from 'discord.js';
 
 export default {
@@ -24,3 +25,4 @@ export default {
         await interaction.followUp({ embeds: [embed] });
     },
 };
+
