@@ -1,0 +1,40 @@
+{
+  "name": "fudcourt-bot-ts",
+  "version": "1.0.0",
+  "description": "Cryptocurrency Trading Discord Bot (TypeScript + Canvas)",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "nodemon src/index.ts",
+    "deploy": "ts-node src/deploy-commands.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "crypto",
+    "typescript",
+    "canvas"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "@prisma/client": "^6.2.1",
+    "axios": "^1.7.9",
+    "ccxt": "^4.4.52",
+    "date-fns": "^4.1.0",
+    "discord.js": "^14.17.3",
+    "dotenv": "^16.4.7",
+    "prisma": "^6.2.1",
+    "technicalindicators": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
