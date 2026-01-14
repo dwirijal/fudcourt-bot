@@ -2,7 +2,7 @@ import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Comp
 import { prisma } from '../../db';
 import { renderBattleScene, BattleState } from '../../utils/CanvasUtils';
 import { getMonster } from '../../utils/monsters';
-import { gachaPool } from '../../gacha';
+import { gachaPool } from '../../config/gacha';
 import { marketOracle } from '../../services/market_oracle';
 import { checkAchievements } from '../../utils/achievements';
 
@@ -47,6 +47,9 @@ export async function execute(interaction: any) {
     // 5. Create Buttons
     // 5. Create Buttons
     const getButtons = (disabled = false, usedSteroid = false) => {
+        const potionItem = user?.inventory.find(i => i.itemName === 'Health Potion');
+        const potionCount = potionItem ? potionItem.quantity : 0;
+
         const row = new ActionRowBuilder<ButtonBuilder>()
             .addComponents(
                 new ButtonBuilder()
@@ -56,7 +59,7 @@ export async function execute(interaction: any) {
                     .setDisabled(disabled),
                 new ButtonBuilder()
                     .setCustomId('heal')
-                    .setLabel(`🧪 Heal (${user?.potions})`)
+                    .setLabel(`🧪 Heal (${potionCount})`)
                     .setStyle(ButtonStyle.Success)
                     .setDisabled(disabled)
             );

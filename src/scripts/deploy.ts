@@ -6,7 +6,7 @@ import path from 'path';
 dotenv.config();
 
 const commands = [];
-const foldersPath = path.join(__dirname, 'commands');
+const foldersPath = path.join(__dirname, '../commands');
 // Ensure commands directory exists
 if (!fs.existsSync(foldersPath)) {
     fs.mkdirSync(foldersPath);

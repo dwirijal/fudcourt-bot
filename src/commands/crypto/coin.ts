@@ -25,7 +25,7 @@ export async function execute(interaction: any) {
 
     try {
         // Fetch Data (Optimized DB + API)
-        const candles = await fetchCexData(symbol, timeframe);
+        const { candles, isStale } = await fetchCexData(symbol, timeframe);
 
         if (!candles || candles.length === 0) {
             await interaction.editReply(`No data found for ${symbol}. Check the symbol or try again.`);
@@ -62,8 +62,11 @@ export async function execute(interaction: any) {
             )
             .setImage('attachment://chart.png')
             .setTimestamp();
+        
+        let content = isStale ? "⚠️ **Warning:** The data is stale due to API errors. Showing cached data." : "";
 
         await interaction.editReply({
+            content: content,
             embeds: [embed],
             files: [attachment]
         });

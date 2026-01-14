@@ -3,7 +3,7 @@ import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Comp
 import { prisma } from '../../db';
 import { renderBattleScene, BattleState } from '../../utils/CanvasUtils';
 import { getMonster } from '../../utils/monsters';
-import { gachaPool } from '../../gacha';
+import { gachaPool } from '../../config/gacha';
 
 export const data = new SlashCommandBuilder()
     .setName('dungeon')
@@ -144,12 +144,20 @@ export async function execute(interaction: any) {
 
                 battleState.monsterHP -= totalDmg;
             } else if (i.customId === 'heal') {
-                if (user.potions > 0) {
-                    user.potions--;
-                    // Sync DB later or just decrement global ref? best to sync later to avoid spam
+                const potionItem = user.inventory.find(i => i.itemName === 'Health Potion');
+                if (potionItem && potionItem.quantity > 0) {
+                    await prisma.$transaction(async (tx) => {
+                        if (potionItem.quantity === 1) {
+                            await tx.inventoryItem.delete({ where: { id: potionItem.id } });
+                        } else {
+                            await tx.inventoryItem.update({ where: { id: potionItem.id }, data: { quantity: { decrement: 1 } } });
+                        }
+                    });
+                    potionItem.quantity--; // Local update
+
                     battleState.playerHP = Math.min(battleState.maxPlayerHP, battleState.playerHP + 40);
                     playerHP = battleState.playerHP;
-                    log = `🧪 Healed 40 HP.`;
+                    log = `🧪 Healed 40 HP. (${potionItem.quantity} left)`;
                 } else {
                     await i.reply({ content: "No potions!", ephemeral: true });
                     return;
@@ -182,8 +190,7 @@ export async function execute(interaction: any) {
                         where: { id: userId },
                         data: {
                             gold: { increment: accumulatedGold },
-                            xp: { increment: accumulatedXP },
-                            potions: user.potions // Update potions used
+                            xp: { increment: accumulatedXP }
                         }
                     });
                     await i.update({
@@ -216,8 +223,7 @@ export async function execute(interaction: any) {
                             where: { id: userId },
                             data: {
                                 gold: { increment: accumulatedGold },
-                                xp: { increment: accumulatedXP },
-                                potions: user.potions
+                                xp: { increment: accumulatedXP }
                             }
                         });
                         await response.update({ content: `✅ **Escaped the dungeon!**\nClaimed: ${accumulatedGold} Gold, ${accumulatedXP} XP.`, components: [], files: [] });

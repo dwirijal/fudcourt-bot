@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { prisma } from '../../db';
-import { pullGacha, getRarityColor } from '../../gacha';
+import { pullGacha, getRarityColor } from '../../config/gacha';
 
 export const data = new SlashCommandBuilder()
     .setName('gacha')

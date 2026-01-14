@@ -13,6 +13,11 @@ export interface Candle {
     volume: number;
 }
 
+export interface FetchCexDataResult {
+    candles: Candle[];
+    isStale: boolean;
+}
+
 function getTimeframeMs(timeframe: string): number {
     const mapping: { [key: string]: number } = {
         '1m': 60 * 1000,
@@ -27,7 +32,7 @@ function getTimeframeMs(timeframe: string): number {
     return mapping[timeframe] || 60 * 1000;
 }
 
-export async function fetchCexData(symbol: string, timeframe: string): Promise<Candle[]> {
+export async function fetchCexData(symbol: string, timeframe: string): Promise<FetchCexDataResult> {
     const requiredCount = (config.data_fetcher.timeframe_counts as any)[timeframe] || 100;
     const tfMs = getTimeframeMs(timeframe);
     const nowMs = Date.now();
@@ -84,41 +89,34 @@ export async function fetchCexData(symbol: string, timeframe: string): Promise<C
 
     // 3. Fetch from API (Only if needed)
     let allNewCandles: any[] = [];
+    let isStale = false;
 
     // Only fetch if we are behind
     if (fetchSince < nowMs) {
         console.log(`[DataFetcher] Fetching ${symbol} ${timeframe} from API (since ${fetchSince})...`);
         const exchange = new (ccxt as any)[config.data_fetcher.defaultExchange]({ enableRateLimit: true });
-        let currentSince = fetchSince;
-
+        
         try {
-            while (currentSince < nowMs) {
-                const candles = await exchange.fetchOHLCV(symbol, timeframe, currentSince, 1000);
-                if (candles.length === 0) break;
-
+            const candles = await exchange.fetchOHLCV(symbol, timeframe, fetchSince, 1000);
+            if (candles && candles.length > 0) {
                 allNewCandles = allNewCandles.concat(candles);
-
-                const lastCandle = candles[candles.length - 1];
-                if (lastCandle && lastCandle[0]) {
-                    currentSince = lastCandle[0] + 1;
-                } else {
-                    break;
-                }
-
-                if (candles.length < 1000) break;
             }
         } catch (e) {
             console.error(`Error fetching data: ${e}`);
+            isStale = true;
             // If API fails, return what we have from DB
             if (dbCandles.length > 0) {
-                 return dbCandles.map((c: Ohlcv) => ({
-                    timestamp: Number(c.timestamp),
-                    open: c.open,
-                    high: c.high,
-                    low: c.low,
-                    close: c.close,
-                    volume: c.volume,
-                }));
+                 return {
+                    candles: dbCandles.map((c: Ohlcv) => ({
+                        timestamp: Number(c.timestamp),
+                        open: c.open,
+                        high: c.high,
+                        low: c.low,
+                        close: c.close,
+                        volume: c.volume,
+                    })),
+                    isStale: true,
+                };
             }
             throw e;
         }
@@ -167,7 +165,10 @@ export async function fetchCexData(symbol: string, timeframe: string): Promise<C
         }))
     ];
 
-    return combined.sort((a, b) => a.timestamp - b.timestamp);
+    return {
+        candles: combined.sort((a, b) => a.timestamp - b.timestamp),
+        isStale,
+    };
 }
 
 export async function fetchDexData(query: string): Promise<any | null> {
