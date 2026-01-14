@@ -20,9 +20,12 @@ export async function execute(interaction: any) {
     }
 
     // 1. Load User
-    let user = await prisma.user.findUnique({ where: { id: userId } });
+    let user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { inventory: true }
+    });
     if (!user) {
-        user = await prisma.user.create({ data: { id: userId } });
+        user = await prisma.user.create({ data: { id: userId }, include: { inventory: true } });
     }
 
     // 2. Dungeon State
@@ -52,12 +55,17 @@ export async function execute(interaction: any) {
 
         const attachment = await renderBattleScene(battleState);
 
-        const getBattleButtons = (disabled = false) => new ActionRowBuilder<ButtonBuilder>()
-            .addComponents(
-                new ButtonBuilder().setCustomId('atk').setLabel('⚔️ Attack').setStyle(ButtonStyle.Danger).setDisabled(disabled),
-                new ButtonBuilder().setCustomId('heal').setLabel(`🧪 Heal (${user.potions})`).setStyle(ButtonStyle.Success).setDisabled(disabled),
-                new ButtonBuilder().setCustomId('flee').setLabel('🏃 Flee (Lose Loot)').setStyle(ButtonStyle.Secondary).setDisabled(disabled)
-            );
+        const getBattleButtons = (disabled = false) => {
+            const potionItem = user?.inventory.find(i => i.itemName === 'Health Potion');
+            const potionCount = potionItem ? potionItem.quantity : 0;
+
+            return new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder().setCustomId('atk').setLabel('⚔️ Attack').setStyle(ButtonStyle.Danger).setDisabled(disabled),
+                    new ButtonBuilder().setCustomId('heal').setLabel(`🧪 Heal (${potionCount})`).setStyle(ButtonStyle.Success).setDisabled(disabled),
+                    new ButtonBuilder().setCustomId('flee').setLabel('🏃 Flee (Lose Loot)').setStyle(ButtonStyle.Secondary).setDisabled(disabled)
+                );
+        };
 
         await interaction.editReply({
             content: `**Dungeon Wave ${wave}/10** started!`,

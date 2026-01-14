@@ -41,9 +41,9 @@ export async function execute(interaction: any) {
     // Initial Reply
     const msg = await interaction.reply({
         content: `**🏪 Fudcourt General Store**${marketMsg}\n` +
-                 `Current Stock:\n` +
-                 `• **Health Potion** (Restores HP)\n` +
-                 `• **Energy Elixir** (Restores Energy/Stamina)`,
+            `Current Stock:\n` +
+            `• **Health Potion** (Restores HP)\n` +
+            `• **Energy Elixir** (Restores Energy/Stamina)`,
         components: [row],
         fetchReply: true
     });
@@ -62,9 +62,9 @@ export async function execute(interaction: any) {
 
         const player = await prisma.user.findUnique({ where: { id: userId } });
         if (!player) {
-             await prisma.user.create({ data: { id: userId } });
-             await i.reply({ content: "Profile created. Try buying again.", ephemeral: true });
-             return;
+            await prisma.user.create({ data: { id: userId } });
+            await i.reply({ content: "Profile created. Try buying again.", ephemeral: true });
+            return;
         }
 
         let cost = 0;
@@ -92,33 +92,28 @@ export async function execute(interaction: any) {
                     data: { gold: { decrement: cost } }
                 });
 
-                // 2. Add to Inventory
-                if (i.customId === 'buy_potion') {
-                    await tx.user.update({
-                        where: { id: userId },
-                        data: { potions: { increment: 1 } }
+                // 2. Add to Inventory (Unified System)
+                let targetItem = itemName;
+
+                const existingItem = await tx.inventoryItem.findFirst({
+                    where: { userId: userId, itemName: targetItem }
+                });
+
+                if (existingItem) {
+                    await tx.inventoryItem.update({
+                        where: { id: existingItem.id },
+                        data: { quantity: { increment: 1 } }
                     });
                 } else {
-                    const existingItem = await tx.inventoryItem.findFirst({
-                        where: { userId: userId, itemName: itemName }
+                    await tx.inventoryItem.create({
+                        data: {
+                            userId: userId,
+                            itemName: targetItem,
+                            rarity: "Common",
+                            damage: 0,
+                            quantity: 1
+                        }
                     });
-
-                    if (existingItem) {
-                        await tx.inventoryItem.update({
-                            where: { id: existingItem.id },
-                            data: { quantity: { increment: 1 } }
-                        });
-                    } else {
-                        await tx.inventoryItem.create({
-                            data: {
-                                userId: userId,
-                                itemName: itemName,
-                                rarity: "Common",
-                                damage: 0,
-                                quantity: 1
-                            }
-                        });
-                    }
                 }
             });
 
@@ -136,6 +131,6 @@ export async function execute(interaction: any) {
                 new ButtonBuilder().setCustomId('buy_potion').setLabel('Shop Closed').setStyle(ButtonStyle.Secondary).setDisabled(true),
                 new ButtonBuilder().setCustomId('buy_elixir').setLabel('Shop Closed').setStyle(ButtonStyle.Secondary).setDisabled(true)
             );
-        interaction.editReply({ components: [disabledRow] }).catch(() => {});
+        interaction.editReply({ components: [disabledRow] }).catch(() => { });
     });
 }

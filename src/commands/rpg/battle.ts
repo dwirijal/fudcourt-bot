@@ -254,16 +254,22 @@ export async function execute(interaction: any) {
             }
         }
         else if (i.customId === 'heal') {
-            if (user.potions > 0) {
-                await prisma.user.update({
-                    where: { id: userId },
-                    data: { potions: { decrement: 1 } }
+            const potionItem = user.inventory.find(i => i.itemName === 'Health Potion');
+
+            if (potionItem && potionItem.quantity > 0) {
+                await prisma.$transaction(async (tx) => {
+                    if (potionItem.quantity === 1) {
+                        await tx.inventoryItem.delete({ where: { id: potionItem.id } });
+                    } else {
+                        await tx.inventoryItem.update({ where: { id: potionItem.id }, data: { quantity: { decrement: 1 } } });
+                    }
                 });
-                user.potions -= 1; // Update Ref
+                // Update Local State
+                potionItem.quantity--;
 
                 const heal = 40;
                 battleState.playerHP = Math.min(battleState.maxPlayerHP, battleState.playerHP + heal);
-                log = `🧪 Gulp! +${heal} HP. (${user.potions} remaining)`;
+                log = `🧪 Gulp! +${heal} HP. (${potionItem.quantity} remaining)`;
             } else {
                 await i.reply({ content: "❌ You have no potions!", ephemeral: true });
                 return;
