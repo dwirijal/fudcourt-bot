@@ -52,6 +52,7 @@ export async function execute(interaction: any) {
             await tx.prediction.create({
                 data: {
                     userId,
+                    channelId: interaction.channelId, // Now strictly supported
                     direction,
                     amount,
                     startPrice: currentPrice,
@@ -60,13 +61,14 @@ export async function execute(interaction: any) {
             });
         });
 
+        const endTime = new Date(Date.now() + 5 * 60 * 1000);
         const embed = new EmbedBuilder()
             .setTitle(`🎰 Prediction Placed: ${direction}`)
             .setColor(direction === 'UP' ? 0x00FF00 : 0xFF0000)
             .setDescription(
                 `**Amount:** ${amount} Gold\n` +
                 `**Start Price:** $${currentPrice.toLocaleString()}\n` +
-                `**Time:** 5 Minutes\n\n` +
+                `**End Time:** <t:${Math.floor(endTime.getTime() / 1000)}:R>\n\n` +
                 `*If BTC is ${direction === 'UP' ? 'higher' : 'lower'} in 5 mins, you win 2x!*`
             )
             .setTimestamp();
@@ -75,6 +77,6 @@ export async function execute(interaction: any) {
 
     } catch (e) {
         console.error(e);
-        await interaction.editReply("❌ Failed to place bet.");
+        await interaction.editReply("❌ Failed to place bet. (Database Error)");
     }
 }

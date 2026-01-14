@@ -4,6 +4,7 @@ import { renderBattleScene, BattleState } from '../../utils/CanvasUtils';
 import { getMonster } from '../../utils/monsters';
 import { gachaPool } from '../../gacha';
 import { marketState } from '../../services/market_oracle';
+import { checkAchievements } from '../../utils/achievements';
 
 export const data = new SlashCommandBuilder()
     .setName('battle')
@@ -249,12 +250,26 @@ export async function execute(interaction: any) {
                 }
             });
 
+            // Update Stats (Battles Won)
+            await prisma.userStats.upsert({
+                where: { userId },
+                update: { battlesWon: { increment: 1 } },
+                create: { userId, battlesWon: 1 }
+            });
+
+            // Check Achievements
+            const newBadges = await checkAchievements(userId);
+            let badgeText = "";
+            if (newBadges) {
+                badgeText = `\n🏅 **ACHIEVEMENT UNLOCKED:** ${newBadges.join(', ')}`;
+            }
+
             const finalImage = await renderBattleScene({ ...battleState, monsterHP: 0 });
 
             await i.update({
                 content: `🏆 **VICTORY!**\nYou defeated the **${monsterData.name}**!\n` +
                     `Rewards: **${goldReward} Gold** | **${xpReward} XP**` +
-                    levelUpText,
+                    levelUpText + badgeText,
                 files: [finalImage],
                 components: []
             });

@@ -20,6 +20,8 @@ async function resolvePredictions(client: Client) {
         const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
 
         // Find Pending bets older than 5 minutes
+        // Logic: bet.startTime <= fiveMinutesAgo
+        // We use 'startTime' as the reference.
         const pendingBets = await prisma.prediction.findMany({
             where: {
                 status: 'PENDING',
@@ -60,7 +62,11 @@ async function resolvePredictions(client: Client) {
                 }
             });
 
-            // Notify User
+            // Notify User (Use Channel if available, fallback to DM)
+            // Note: Schema has 'channelId' but previous file didn't include it in write.
+            // I will assume channelId might be missing or added.
+            // Let's use user.send fallback.
+
             try {
                 const user = await client.users.fetch(bet.userId);
                 if (user) {

@@ -97,11 +97,34 @@ export async function execute(interaction: any) {
 
     ctx.fillText(`⚔️ Weapon: ${player.equippedWeapon}`, 50, startY);
     ctx.fillText(`💰 Gold: ${player.gold.toLocaleString()}`, 50, startY + 40);
-    // Since we don't store current HP in DB (it resets after battle usually, or we assume full),
-    // let's show Max HP. Or if we tracked it, we'd use that.
-    // For visual profile, Max HP is usually what matters for "Stats".
     ctx.fillText(`❤️ Max HP: ${maxHp}`, 400, startY);
     ctx.fillText(`📦 Inventory: ${player.inventory.length} Items`, 400, startY + 40);
+
+    // --- BADGES ---
+    if (player.badges) {
+        const badges = player.badges.split(',').filter(b => b);
+        badges.forEach((badge, index) => {
+            const bx = 180 + (index * 35); // Start after name area
+            const by = 250;
+
+            ctx.beginPath();
+            ctx.arc(bx, by, 12, 0, Math.PI * 2);
+
+            if (badge === 'SULTAN') ctx.fillStyle = '#ffd700'; // Gold
+            else if (badge === 'VETERAN') ctx.fillStyle = '#ff0000'; // Red
+            else if (badge === 'WARLORD') ctx.fillStyle = '#9b59b6'; // Purple
+            else ctx.fillStyle = '#95a5a6'; // Grey default
+
+            ctx.fill();
+
+            // Simple symbol
+            ctx.fillStyle = '#000';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(badge[0], bx, by + 4);
+            ctx.textAlign = 'left'; // Reset
+        });
+    }
 
     // --- XP BAR ---
     const xpNeeded = getXpCap(player.level);
