@@ -5,6 +5,7 @@ import { getMonster } from '../../utils/monsters';
 import { gachaPool } from '../../config/gacha';
 import { marketOracle } from '../../services/market_oracle';
 import { checkAchievements } from '../../utils/achievements';
+import { Battle } from '../../utils/Battle';
 
 export const data = new SlashCommandBuilder()
     .setName('battle')
@@ -32,18 +33,12 @@ export async function execute(interaction: any) {
     // 3. Initial State (Player scales with Level)
     const playerMaxHP = 100 + (user.level * 10);
 
-    const battleState: BattleState = {
-        playerHP: playerMaxHP,
-        maxPlayerHP: playerMaxHP,
-        monsterHP: monsterData.hp,
-        maxMonsterHP: monsterData.hp,
-        playerName: interaction.user.username,
-        monsterName: monsterData.name
-    };
+    const battle = new Battle(user, monsterData.name, monsterData.hp, playerMaxHP, marketState, prisma);
+    const battleState = battle.getState();
 
     // 4. Render Initial Scene
     let attachment = await renderBattleScene(battleState);
-
+    
     // 5. Create Buttons
     // 5. Create Buttons
     const getButtons = (disabled = false, usedSteroid = false) => {
@@ -157,7 +152,6 @@ export async function execute(interaction: any) {
                 }
             }
         } // End Monster Turn Check
-
         // --- PLAYER TURN ---
         // --- PLAYER TURN ---
         if (i.customId === 'steroid') {
@@ -180,103 +174,10 @@ export async function execute(interaction: any) {
             }
         }
         else if (i.customId === 'attack') {
-            const currentWeapon = user.equippedWeapon || "Wooden Stick";
-            let weaponDmg = 2; // Default
-
-            // Special Crypto Weapons
-            if (currentWeapon === "Ether Blade") {
-                // Scaling: 1% of ETH Price
-                weaponDmg = Math.floor(marketState.ethPrice / 100);
-                log = `🔹 **Ether Blade** resonates with the network! (${weaponDmg} Dmg)`;
-            }
-            else if (currentWeapon === "Doge Hammer") {
-                // Meme Logic
-                weaponDmg = marketState.dogePrice > 0.2 ? 100 : 5;
-                if (weaponDmg === 100) log = `🐕 **DOGE PUMP!** The hammer strikes with MOON power!`;
-                else log = `🐕 **Doge Dump...** The hammer feels light.`;
-            }
-            else {
-                // Standard Weapons
-                const weaponData = gachaPool.find(w => w.name === currentWeapon);
-                if (weaponData) weaponDmg = weaponData.damage;
-            }
-
-            // Base Damage 10-20 + Weapon Damage
-            let rng = Math.floor(Math.random() * 20) + 10;
-
-            // MARKET MODIFIER (Player)
-            if (marketState.status === 'BULL') {
-                rng = Math.floor(rng * 1.2); // 20% Buff to base damage
-                log += " 🚀(Bull Buff)";
-            } else if (marketState.status === 'BEAR') {
-                rng = Math.floor(rng * 0.8); // 20% Nerf
-                log += " 🩸(Bear Nerf)";
-            }
-
-            // CLASS PASSIVE: MAGE CRIT (30% Chance -> 2x Base Dmg)
-            if (user.job === 'Mage' && Math.random() < 0.3) {
-                rng *= 2;
-                log += `\n🔮 **CRITICAL HIT!**`;
-            }
-
-            // CLASS PASSIVE: PALADIN SMITE (10% Stun)
-            if (user.job === 'Paladin' && Math.random() < 0.10) {
-                monsterStunned = true;
-                log += `\n🔨 **SMITE!** You stunned the enemy!`;
-            }
-
-            // CLASS PASSIVE: RANGER DOUBLE SHOT (20% Chance)
-            let extraShot = 0;
-            if (user.job === 'Ranger' && Math.random() < 0.20) {
-                extraShot = Math.floor(Math.random() * 20) + 10 + weaponDmg;
-                log += `\n🏹 **DOUBLE SHOT!** (+${extraShot})`;
-            }
-
-            let totalDmg = rng + weaponDmg + extraShot;
-
-            // STEROID EFFECT
-            if (steroidBuff) {
-                totalDmg *= 2;
-                log += `\n💉 **RAGE!** Damage doubled to **${totalDmg}**!`;
-
-                // Recoil (30%)
-                if (Math.random() < 0.3) {
-                    const recoil = Math.floor(user.level * 2);
-                    battleState.playerHP -= recoil;
-                    log += `\n💀 **OVERDOSE!** You took ${recoil} recoil damage.`;
-                }
-            }
-
-            battleState.monsterHP -= totalDmg;
-
-            // Format Log if not special
-            if (!log.includes("Ether") && !log.includes("Doge")) {
-                log = `You hit with **${currentWeapon}** for **${totalDmg}** damage!` + log;
-            } else {
-                log += `\nTotal Damage: **${totalDmg}**`;
-            }
+            log = await battle.handlePlayerTurn('attack');
         }
         else if (i.customId === 'heal') {
-            const potionItem = user.inventory.find(i => i.itemName === 'Health Potion');
-
-            if (potionItem && potionItem.quantity > 0) {
-                await prisma.$transaction(async (tx) => {
-                    if (potionItem.quantity === 1) {
-                        await tx.inventoryItem.delete({ where: { id: potionItem.id } });
-                    } else {
-                        await tx.inventoryItem.update({ where: { id: potionItem.id }, data: { quantity: { decrement: 1 } } });
-                    }
-                });
-                // Update Local State
-                potionItem.quantity--;
-
-                const heal = 40;
-                battleState.playerHP = Math.min(battleState.maxPlayerHP, battleState.playerHP + heal);
-                log = `🧪 Gulp! +${heal} HP. (${potionItem.quantity} remaining)`;
-            } else {
-                await i.reply({ content: "❌ You have no potions!", ephemeral: true });
-                return;
-            }
+            log = await battle.handlePlayerTurn('heal');
         }
         else if (i.customId === 'run') {
             await i.update({
