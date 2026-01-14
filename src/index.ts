@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { checkFeeds } from './services/feed_service';
 import { updateGasPrices } from './services/gas_service';
+import { startOracle } from './services/market_oracle';
 
 dotenv.config();
 
@@ -49,6 +50,9 @@ const commandFolders = fs.readdirSync(foldersPath).filter(folder => fs.lstatSync
 
 client.once('ready', () => {
     console.log(`🚀 Bot is ready! Logged in as ${client.user?.tag}`);
+
+    // --- SERVICES ---
+    startOracle(); // Starts the Market Oracle (BTC Monitor)
 
     // --- SCHEDULER ---
 
