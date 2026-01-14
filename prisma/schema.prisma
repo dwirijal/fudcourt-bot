@@ -105,3 +105,13 @@ model RaidBoss {
   maxHp       Int    @default(10000) // maxHP
   isDead      Boolean @default(false)
 }
+
+// RSS Feed History (Deduplication)
+model FeedHistory {
+  id        Int      @id @default(autoincrement())
+  feedType  String   // 'JOB' or 'NEWS'
+  uniqueId  String   // GUID or URL
+  createdAt DateTime @default(now())
+
+  @@unique([feedType, uniqueId])
+}

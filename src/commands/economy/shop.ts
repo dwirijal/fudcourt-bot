@@ -71,23 +71,43 @@ export async function execute(interaction: any) {
         }
         else if (item === 'sword') {
             const cost = 200;
-            if (user.hasSword) {
-                await interaction.editReply("❌ You already have a sword!");
-                return;
+            // Removed 'hasSword' check as it doesn't exist in new schema.
+            // In new schema, equippedWeapon is string.
+            if (user.equippedWeapon === 'Iron Sword') {
+                 await interaction.editReply("❌ You already have this sword equipped!");
+                 return;
             }
+
             if (user.gold < cost) {
                 await interaction.editReply(`❌ You need **${cost} gold**! You have ${user.gold}.`);
                 return;
             }
 
+            // In new system, we probably add to inventory? But for now, let's just equip it to match behavior.
+            // Or add to Inventory table.
+            // Let's add to Inventory AND equip it.
+
             await prisma.user.update({
                 where: { id: userId },
                 data: {
                     gold: { decrement: cost },
-                    hasSword: true
+                    equippedWeapon: "Iron Sword"
                 }
             });
-            await interaction.editReply(`✅ You bought an **Iron Sword**! (-${cost}g)`);
+
+            // Also add to inventory logic if needed, but for 'shop' legacy compatibility I'll stick to just updating user state
+            // actually, let's sync with schema.
+
+            await prisma.inventoryItem.create({
+                data: {
+                    userId: userId,
+                    itemName: "Iron Sword",
+                    rarity: "Common",
+                    damage: 15
+                }
+            });
+
+            await interaction.editReply(`✅ You bought and equipped an **Iron Sword**! (-${cost}g)`);
         }
     }
 }
