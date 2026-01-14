@@ -1,6 +1,6 @@
 import { Client, EmbedBuilder } from 'discord.js';
 import { prisma } from '../db';
-import { marketState } from './market_oracle';
+import { marketOracle } from './market_oracle';
 
 export function startPredictionService(client: Client) {
     console.log('[Prediction] Starting Prediction Service (1m interval)...');
@@ -13,7 +13,7 @@ export function startPredictionService(client: Client) {
 
 async function resolvePredictions(client: Client) {
     try {
-        const currentPrice = marketState.btcPrice;
+        const currentPrice = marketOracle.getState().btcPrice;
         if (currentPrice === 0) return; // Oracle not ready
 
         const now = new Date();

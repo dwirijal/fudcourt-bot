@@ -1,11 +1,12 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { marketState } from '../../services/market_oracle';
+import { marketOracle } from '../../services/market_oracle';
 
 export const data = new SlashCommandBuilder()
     .setName('market')
     .setDescription('Check current RPG World Status & Market Buffs');
 
 export async function execute(interaction: any) {
+    const marketState = marketOracle.getState();
     let color = '#95a5a6'; // Crab (Grey)
     let title = "🦀 CRAB MARKET (Normal Mode)";
     let desc = "The market is stable. Monsters and Players have normal stats.";

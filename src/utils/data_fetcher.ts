@@ -2,6 +2,7 @@ import ccxt from 'ccxt';
 import axios from 'axios';
 import { Ohlcv } from '@prisma/client';
 import { prisma } from '../db';
+import { config } from '../config';
 
 export interface Candle {
     timestamp: number;
@@ -11,15 +12,6 @@ export interface Candle {
     close: number;
     volume: number;
 }
-
-const TIMEFRAME_COUNTS: { [key: string]: number } = {
-    '15m': 1000,
-    '1h': 1000,
-    '4h': 500,
-    '1d': 365,
-    '1w': 52,
-    '1M': 12,
-};
 
 function getTimeframeMs(timeframe: string): number {
     const mapping: { [key: string]: number } = {
@@ -36,7 +28,7 @@ function getTimeframeMs(timeframe: string): number {
 }
 
 export async function fetchCexData(symbol: string, timeframe: string): Promise<Candle[]> {
-    const requiredCount = TIMEFRAME_COUNTS[timeframe] || 100;
+    const requiredCount = (config.data_fetcher.timeframe_counts as any)[timeframe] || 100;
     const tfMs = getTimeframeMs(timeframe);
     const nowMs = Date.now();
     const since = nowMs - requiredCount * tfMs;
@@ -96,7 +88,7 @@ export async function fetchCexData(symbol: string, timeframe: string): Promise<C
     // Only fetch if we are behind
     if (fetchSince < nowMs) {
         console.log(`[DataFetcher] Fetching ${symbol} ${timeframe} from API (since ${fetchSince})...`);
-        const exchange = new ccxt.binance({ enableRateLimit: true });
+        const exchange = new (ccxt as any)[config.data_fetcher.defaultExchange]({ enableRateLimit: true });
         let currentSince = fetchSince;
 
         try {

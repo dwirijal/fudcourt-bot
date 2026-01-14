@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { prisma } from '../../db';
-import { marketState } from '../../services/market_oracle';
+import { marketOracle } from '../../services/market_oracle';
 
 export const data = new SlashCommandBuilder()
     .setName('predict')
@@ -28,7 +28,7 @@ export async function execute(interaction: any) {
         return interaction.editReply("❌ Bet amount must be positive!");
     }
 
-    const currentPrice = marketState.btcPrice;
+    const currentPrice = marketOracle.getState().btcPrice;
     if (currentPrice === 0) {
         return interaction.editReply("❌ Market Oracle is initializing. Please wait...");
     }

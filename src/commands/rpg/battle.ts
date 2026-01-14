@@ -3,7 +3,7 @@ import { prisma } from '../../db';
 import { renderBattleScene, BattleState } from '../../utils/CanvasUtils';
 import { getMonster } from '../../utils/monsters';
 import { gachaPool } from '../../gacha';
-import { marketState } from '../../services/market_oracle';
+import { marketOracle } from '../../services/market_oracle';
 import { checkAchievements } from '../../utils/achievements';
 
 export const data = new SlashCommandBuilder()
@@ -14,10 +14,16 @@ export async function execute(interaction: any) {
     await interaction.deferReply();
     const userId = interaction.user.id;
 
+    const marketState = marketOracle.getState();
+
     // 1. Load User Data
-    let user = await prisma.user.findUnique({ where: { id: userId } });
+    // 1. Load User Data
+    let user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { inventory: true } // Need inventory for Steroids
+    });
     if (!user) {
-        user = await prisma.user.create({ data: { id: userId } });
+        user = await prisma.user.create({ data: { id: userId }, include: { inventory: true } });
     }
 
     // 2. Get Dynamic Monster
@@ -39,24 +45,45 @@ export async function execute(interaction: any) {
     let attachment = await renderBattleScene(battleState);
 
     // 5. Create Buttons
-    const getButtons = (disabled = false) => new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('attack')
-                .setLabel('⚔️ Attack')
-                .setStyle(ButtonStyle.Danger)
-                .setDisabled(disabled),
-            new ButtonBuilder()
-                .setCustomId('heal')
-                .setLabel(`🧪 Heal (${user?.potions})`)
-                .setStyle(ButtonStyle.Success)
-                .setDisabled(disabled),
+    // 5. Create Buttons
+    const getButtons = (disabled = false, usedSteroid = false) => {
+        const row = new ActionRowBuilder<ButtonBuilder>()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('attack')
+                    .setLabel('⚔️ Attack')
+                    .setStyle(ButtonStyle.Danger)
+                    .setDisabled(disabled),
+                new ButtonBuilder()
+                    .setCustomId('heal')
+                    .setLabel(`🧪 Heal (${user?.potions})`)
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(disabled)
+            );
+
+        // Check for Steroid Potion
+        const hasSteroid = user?.inventory.find(i => i.itemName === 'Steroid Potion' && i.quantity > 0);
+
+        if (hasSteroid && !usedSteroid) {
+            row.addComponents(
+                new ButtonBuilder()
+                    .setCustomId('steroid')
+                    .setLabel('💉 Use Steroid')
+                    .setStyle(ButtonStyle.Primary)
+                    .setDisabled(disabled)
+            );
+        }
+
+        row.addComponents(
             new ButtonBuilder()
                 .setCustomId('run')
                 .setLabel('🏃 Run')
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(disabled)
         );
+
+        return row;
+    };
 
     // Market Modifier Announcement
     let marketMsg = "";
@@ -70,7 +97,9 @@ export async function execute(interaction: any) {
     });
 
     // 6. Game Loop
+    // 6. Game Loop
     let monsterStunned = false;
+    let steroidBuff = false;
 
     const collector = message.createMessageComponentCollector({
         componentType: ComponentType.Button,
@@ -127,7 +156,27 @@ export async function execute(interaction: any) {
         } // End Monster Turn Check
 
         // --- PLAYER TURN ---
-        if (i.customId === 'attack') {
+        // --- PLAYER TURN ---
+        if (i.customId === 'steroid') {
+            // Consume Steroid
+            const steroidItem = user.inventory.find(i => i.itemName === 'Steroid Potion');
+            if (steroidItem && steroidItem.quantity > 0) {
+                await prisma.$transaction(async (tx) => {
+                    if (steroidItem.quantity === 1) {
+                        await tx.inventoryItem.delete({ where: { id: steroidItem.id } });
+                    } else {
+                        await tx.inventoryItem.update({ where: { id: steroidItem.id }, data: { quantity: { decrement: 1 } } });
+                    }
+                });
+                // Update Local State
+                steroidItem.quantity--;
+                steroidBuff = true;
+                log = "💉 **STEROID INJECTED!** You feel a surge of power (2x Damage)!";
+            } else {
+                log = "❌ You don't have any Steroids!";
+            }
+        }
+        else if (i.customId === 'attack') {
             const currentWeapon = user.equippedWeapon || "Wooden Stick";
             let weaponDmg = 2; // Default
 
@@ -180,14 +229,28 @@ export async function execute(interaction: any) {
                 log += `\n🏹 **DOUBLE SHOT!** (+${extraShot})`;
             }
 
-            const totalDmg = rng + weaponDmg + extraShot;
+            let totalDmg = rng + weaponDmg + extraShot;
+
+            // STEROID EFFECT
+            if (steroidBuff) {
+                totalDmg *= 2;
+                log += `\n💉 **RAGE!** Damage doubled to **${totalDmg}**!`;
+
+                // Recoil (30%)
+                if (Math.random() < 0.3) {
+                    const recoil = Math.floor(user.level * 2);
+                    battleState.playerHP -= recoil;
+                    log += `\n💀 **OVERDOSE!** You took ${recoil} recoil damage.`;
+                }
+            }
+
             battleState.monsterHP -= totalDmg;
 
             // Format Log if not special
             if (!log.includes("Ether") && !log.includes("Doge")) {
                 log = `You hit with **${currentWeapon}** for **${totalDmg}** damage!` + log;
             } else {
-                 log += `\nTotal Damage: **${totalDmg}**`;
+                log += `\nTotal Damage: **${totalDmg}**`;
             }
         }
         else if (i.customId === 'heal') {
@@ -294,7 +357,7 @@ export async function execute(interaction: any) {
         await i.update({
             content: log,
             files: [nextImage],
-            components: [getButtons()]
+            components: [getButtons(false, steroidBuff)]
         });
     });
 

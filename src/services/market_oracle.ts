@@ -1,4 +1,5 @@
 import ccxt from 'ccxt';
+import { config } from '../config';
 
 export interface MarketState {
     btcPrice: number;
@@ -10,60 +11,80 @@ export interface MarketState {
     dogePrice: number;
 }
 
-export let marketState: MarketState = {
-    btcPrice: 0,
-    change24h: 0,
-    status: 'CRAB', // Default safe state
-    lastUpdate: new Date(),
-    ethPrice: 2000,
-    dogePrice: 0.1
-};
+class MarketOracle {
+    private marketState: MarketState;
 
-export async function startOracle() {
-    console.log('[Oracle] Starting Market Oracle...');
-    await updateMarketState();
+    constructor() {
+        this.marketState = {
+            btcPrice: 0,
+            change24h: 0,
+            status: 'CRAB', // Default safe state
+            lastUpdate: new Date(),
+            ethPrice: config.oracle.defaultEthPrice,
+            dogePrice: config.oracle.defaultDogePrice,
+        };
+    }
 
-    // Update every 5 minutes
-    setInterval(updateMarketState, 5 * 60 * 1000);
-}
+    public async start() {
+        console.log('[Oracle] Starting Market Oracle...');
+        await this.updateMarketState();
 
-async function updateMarketState() {
-    try {
-        const exchange = new ccxt.binance({ enableRateLimit: true });
+        // Update every 5 minutes
+        setInterval(() => this.updateMarketState(), config.oracle.updateInterval);
+    }
 
-        // Fetch BTC for World State
-        const btcTicker = await exchange.fetchTicker('BTC/USDT');
+    public getState(): MarketState {
+        return this.marketState;
+    }
 
-        // Fetch ETH & DOGE for Weapons
-        // Note: fetchTickers is more efficient if supported, but let's be safe with separate calls or try fetchTickers
-        let ethTicker, dogeTicker;
-        try {
-             ethTicker = await exchange.fetchTicker('ETH/USDT');
-             dogeTicker = await exchange.fetchTicker('DOGE/USDT');
-        } catch (e) {
-            console.warn("[Oracle] Failed to fetch altcoin prices, keeping old values");
-        }
+    private async updateMarketState() {
+        let success = false;
+        for (const exchangeId of config.oracle.exchanges) {
+            try {
+                const exchange = new (ccxt as any)[exchangeId]({ enableRateLimit: true });
 
-        if (btcTicker) {
-            marketState.btcPrice = btcTicker.last || 0;
-            marketState.change24h = btcTicker.percentage || 0;
-            marketState.lastUpdate = new Date();
+                // Fetch BTC for World State
+                const btcTicker = await exchange.fetchTicker('BTC/USDT');
 
-            // Determine RPG World Status
-            if (marketState.change24h >= 2.0) {
-                marketState.status = 'BULL';
-            } else if (marketState.change24h <= -2.0) {
-                marketState.status = 'BEAR';
-            } else {
-                marketState.status = 'CRAB';
+                // Fetch ETH & DOGE for Weapons
+                let ethTicker, dogeTicker;
+                try {
+                    ethTicker = await exchange.fetchTicker('ETH/USDT');
+                    dogeTicker = await exchange.fetchTicker('DOGE/USDT');
+                } catch (e) {
+                    console.warn(`[Oracle] Failed to fetch altcoin prices from ${exchangeId}, keeping old values`);
+                }
+
+                if (btcTicker) {
+                    this.marketState.btcPrice = btcTicker.last || 0;
+                    this.marketState.change24h = btcTicker.percentage || 0;
+                    this.marketState.lastUpdate = new Date();
+
+                    // Determine RPG World Status
+                    if (this.marketState.change24h >= config.oracle.bullThreshold) {
+                        this.marketState.status = 'BULL';
+                    } else if (this.marketState.change24h <= config.oracle.bearThreshold) {
+                        this.marketState.status = 'BEAR';
+                    } else {
+                        this.marketState.status = 'CRAB';
+                    }
+                }
+
+                if (ethTicker) this.marketState.ethPrice = ethTicker.last || config.oracle.defaultEthPrice;
+                if (dogeTicker) this.marketState.dogePrice = dogeTicker.last || config.oracle.defaultDogePrice;
+
+                console.log(`[Oracle] 🌍 World State from ${exchangeId}: ${this.marketState.status} (BTC: $${this.marketState.btcPrice}, 24h: ${this.marketState.change24h.toFixed(2)}%)`);
+                success = true;
+                break; // Exit loop on success
+            } catch (e) {
+                console.error(`[Oracle] Failed to fetch from ${exchangeId}:`, e);
             }
         }
 
-        if (ethTicker) marketState.ethPrice = ethTicker.last || 2000;
-        if (dogeTicker) marketState.dogePrice = dogeTicker.last || 0.1;
-
-        console.log(`[Oracle] 🌍 World State: ${marketState.status} (BTC: $${marketState.btcPrice}, 24h: ${marketState.change24h.toFixed(2)}%)`);
-    } catch (e) {
-        console.error("[Oracle] Failed to update market state:", e);
+        if (!success) {
+            console.error("[Oracle] Failed to update market state from all sources.");
+        }
     }
 }
+
+export const marketOracle = new MarketOracle();

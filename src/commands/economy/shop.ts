@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
 import { prisma } from '../../db';
-import { marketState } from '../../services/market_oracle';
+import { marketOracle } from '../../services/market_oracle';
 
 export const data = new SlashCommandBuilder()
     .setName('shop')
@@ -8,6 +8,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: any) {
     const userId = interaction.user.id;
+    const marketState = marketOracle.getState();
 
     // --- DYNAMIC PRICING ---
     let basePotionPrice = 50;

@@ -20,7 +20,7 @@ model Ohlcv {
   createdAt DateTime @default(now())
 
   @@unique([symbol, timeframe, timestamp])
-  @@index([symbol, timeframe])
+  @@index([symbol, timeframe, timestamp])
 }
 
 model CoinGeckoData {
