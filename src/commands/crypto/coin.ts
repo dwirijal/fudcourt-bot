@@ -1,9 +1,6 @@
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import ccxt from 'ccxt';
 import { renderCandlestickChart } from '../../utils/CanvasUtils';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
 
 // Cache map to prevent API spam (simple in-memory cache)
 const cache = new Map<string, { data: any, timestamp: number }>();
