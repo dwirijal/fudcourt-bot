@@ -3,6 +3,8 @@ import { prisma } from '../../db';
 import { renderBattleScene, BattleState } from '../../utils/CanvasUtils';
 import { getMonster } from '../../utils/monsters';
 import { gachaPool } from '../../gacha';
+import { marketState } from '../../services/market_oracle';
+import { checkAchievements } from '../../utils/achievements';
 
 export const data = new SlashCommandBuilder()
     .setName('battle')
@@ -56,8 +58,13 @@ export async function execute(interaction: any) {
                 .setDisabled(disabled)
         );
 
+    // Market Modifier Announcement
+    let marketMsg = "";
+    if (marketState.status === 'BULL') marketMsg = "\n🚀 **BULL MARKET:** Player Damage Boosted!";
+    if (marketState.status === 'BEAR') marketMsg = "\n🩸 **BEAR MARKET:** Monster Damage Boosted!";
+
     const message = await interaction.editReply({
-        content: `**Found a wild ${battleState.monsterName}!** (Lvl ${user.level} Challenge)`,
+        content: `**Found a wild ${battleState.monsterName}!** (Lvl ${user.level} Challenge)${marketMsg}`,
         files: [attachment],
         components: [getButtons()]
     });
@@ -73,7 +80,6 @@ export async function execute(interaction: any) {
 
     collector.on('collect', async (i: any) => {
         // Optimization: Rely on local 'user' state logic instead of re-fetching DB every click.
-        // user = await prisma.user.findUnique({ where: { id: userId } });
         if (!user) return;
 
         let log = "";
@@ -86,6 +92,11 @@ export async function execute(interaction: any) {
             } else {
                 // Dynamic Damage from Monster Data
                 let dmg = Math.floor(Math.random() * (monsterData.damageMax - monsterData.damageMin + 1)) + monsterData.damageMin;
+
+                // MARKET MODIFIER (Monster)
+                if (marketState.status === 'BEAR') {
+                    dmg = Math.floor(dmg * 1.5); // 50% Buff
+                }
 
                 // CLASS PASSIVE: ROGUE DODGE (25%)
                 if (user.job === 'Rogue' && Math.random() < 0.25) {
@@ -118,18 +129,42 @@ export async function execute(interaction: any) {
         // --- PLAYER TURN ---
         if (i.customId === 'attack') {
             const currentWeapon = user.equippedWeapon || "Wooden Stick";
-            const weaponData = gachaPool.find(w => w.name === currentWeapon) || { damage: 2, rarity: 'Common' };
-            const weaponDmg = weaponData.damage;
+            let weaponDmg = 2; // Default
+
+            // Special Crypto Weapons
+            if (currentWeapon === "Ether Blade") {
+                // Scaling: 1% of ETH Price
+                weaponDmg = Math.floor(marketState.ethPrice / 100);
+                log = `🔹 **Ether Blade** resonates with the network! (${weaponDmg} Dmg)`;
+            }
+            else if (currentWeapon === "Doge Hammer") {
+                // Meme Logic
+                weaponDmg = marketState.dogePrice > 0.2 ? 100 : 5;
+                if (weaponDmg === 100) log = `🐕 **DOGE PUMP!** The hammer strikes with MOON power!`;
+                else log = `🐕 **Doge Dump...** The hammer feels light.`;
+            }
+            else {
+                // Standard Weapons
+                const weaponData = gachaPool.find(w => w.name === currentWeapon);
+                if (weaponData) weaponDmg = weaponData.damage;
+            }
 
             // Base Damage 10-20 + Weapon Damage
             let rng = Math.floor(Math.random() * 20) + 10;
 
+            // MARKET MODIFIER (Player)
+            if (marketState.status === 'BULL') {
+                rng = Math.floor(rng * 1.2); // 20% Buff to base damage
+                log += " 🚀(Bull Buff)";
+            } else if (marketState.status === 'BEAR') {
+                rng = Math.floor(rng * 0.8); // 20% Nerf
+                log += " 🩸(Bear Nerf)";
+            }
+
             // CLASS PASSIVE: MAGE CRIT (30% Chance -> 2x Base Dmg)
             if (user.job === 'Mage' && Math.random() < 0.3) {
                 rng *= 2;
-                log = `🔮 **CRITICAL HIT!** You hit with **${currentWeapon}** for **${rng + weaponDmg}** damage!`;
-            } else {
-                log = `You hit with **${currentWeapon}** for **${rng + weaponDmg}** damage!`;
+                log += `\n🔮 **CRITICAL HIT!**`;
             }
 
             // CLASS PASSIVE: PALADIN SMITE (10% Stun)
@@ -139,14 +174,21 @@ export async function execute(interaction: any) {
             }
 
             // CLASS PASSIVE: RANGER DOUBLE SHOT (20% Chance)
+            let extraShot = 0;
             if (user.job === 'Ranger' && Math.random() < 0.20) {
-                const secondDmg = Math.floor(Math.random() * 20) + 10 + weaponDmg;
-                battleState.monsterHP -= secondDmg;
-                log += `\n🏹 **DOUBLE SHOT!** You hit again for **${secondDmg}**!`;
+                extraShot = Math.floor(Math.random() * 20) + 10 + weaponDmg;
+                log += `\n🏹 **DOUBLE SHOT!** (+${extraShot})`;
             }
 
-            const totalDmg = rng + weaponDmg;
+            const totalDmg = rng + weaponDmg + extraShot;
             battleState.monsterHP -= totalDmg;
+
+            // Format Log if not special
+            if (!log.includes("Ether") && !log.includes("Doge")) {
+                log = `You hit with **${currentWeapon}** for **${totalDmg}** damage!` + log;
+            } else {
+                 log += `\nTotal Damage: **${totalDmg}**`;
+            }
         }
         else if (i.customId === 'heal') {
             if (user.potions > 0) {
@@ -179,18 +221,22 @@ export async function execute(interaction: any) {
             // Victory & Rewards
             let xpReward = monsterData.xpReward;
             let goldReward = monsterData.goldReward;
+
+            // Market Modifiers
+            if (marketState.status === 'BULL') {
+                xpReward = Math.floor(xpReward * 1.1);
+                goldReward = Math.floor(goldReward * 1.1);
+            }
+
             let newLevel = user.level;
             let levelUpText = "";
 
-            // Calculate Level Up
-            // Formula: Next Level needs level * 100 XP
-            // Wait, we need to accumulate XP.
             const xpNeeded = user.level * 100;
             let currentXp = user.xp + xpReward;
 
             if (currentXp >= xpNeeded) {
                 newLevel += 1;
-                currentXp -= xpNeeded; // Basic overflow logic
+                currentXp -= xpNeeded;
                 levelUpText = `\n🎉 **LEVEL UP!** You are now **Level ${newLevel}**!`;
             }
 
@@ -204,12 +250,26 @@ export async function execute(interaction: any) {
                 }
             });
 
+            // Update Stats (Battles Won)
+            await prisma.userStats.upsert({
+                where: { userId },
+                update: { battlesWon: { increment: 1 } },
+                create: { userId, battlesWon: 1 }
+            });
+
+            // Check Achievements
+            const newBadges = await checkAchievements(userId);
+            let badgeText = "";
+            if (newBadges) {
+                badgeText = `\n🏅 **ACHIEVEMENT UNLOCKED:** ${newBadges.join(', ')}`;
+            }
+
             const finalImage = await renderBattleScene({ ...battleState, monsterHP: 0 });
 
             await i.update({
                 content: `🏆 **VICTORY!**\nYou defeated the **${monsterData.name}**!\n` +
-                    `Expected Rewards: **${goldReward} Gold** | **${xpReward} XP**` +
-                    levelUpText,
+                    `Rewards: **${goldReward} Gold** | **${xpReward} XP**` +
+                    levelUpText + badgeText,
                 files: [finalImage],
                 components: []
             });

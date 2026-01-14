@@ -2,6 +2,10 @@ import { Client, GatewayIntentBits, Collection, Interaction, ChannelType } from 
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { checkFeeds } from './services/feed_service';
+import { updateGasPrices } from './services/gas_service';
+import { startOracle } from './services/market_oracle';
+import { startPredictionService } from './services/prediction_service';
 
 dotenv.config();
 
@@ -47,6 +51,28 @@ const commandFolders = fs.readdirSync(foldersPath).filter(folder => fs.lstatSync
 
 client.once('ready', () => {
     console.log(`🚀 Bot is ready! Logged in as ${client.user?.tag}`);
+
+    // --- SERVICES ---
+    startOracle(); // Starts the Market Oracle (BTC Monitor)
+    startPredictionService(client); // Starts the Prediction Market Resolution Loop
+
+    // --- SCHEDULER ---
+
+    // 1. Feeds (Jobs & News) - Every 2 minutes
+    console.log('[Scheduler] Starting Feed Service (2m interval)...');
+    setInterval(() => {
+        checkFeeds();
+    }, 2 * 60 * 1000);
+    // Initial Run
+    checkFeeds();
+
+    // 2. Gas Prices - Every 4 hours
+    console.log('[Scheduler] Starting Gas Service (4h interval)...');
+    setInterval(() => {
+        updateGasPrices(client);
+    }, 4 * 60 * 60 * 1000);
+    // Initial Run
+    updateGasPrices(client);
 });
 
 client.on('channelCreate', async (channel) => {

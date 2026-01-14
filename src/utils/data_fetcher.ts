@@ -1,11 +1,9 @@
-
 import ccxt from 'ccxt';
 import axios from 'axios';
-import { PrismaClient, Ohlcv } from '@prisma/client';
+import { Ohlcv } from '@prisma/client';
+import { prisma } from '../db';
 
-const prisma = new PrismaClient();
-
-interface Candle {
+export interface Candle {
     timestamp: number;
     open: number;
     high: number;
@@ -15,12 +13,12 @@ interface Candle {
 }
 
 const TIMEFRAME_COUNTS: { [key: string]: number } = {
-    '15m': 10000,
-    '1h': 5000,
-    '4h': 5000,
-    '1d': 2000,
-    '1w': 1000,
-    '1M': 500,
+    '15m': 1000,
+    '1h': 1000,
+    '4h': 500,
+    '1d': 365,
+    '1w': 52,
+    '1M': 12,
 };
 
 function getTimeframeMs(timeframe: string): number {
@@ -38,12 +36,12 @@ function getTimeframeMs(timeframe: string): number {
 }
 
 export async function fetchCexData(symbol: string, timeframe: string): Promise<Candle[]> {
-    const requiredCount = TIMEFRAME_COUNTS[timeframe] || 1000;
+    const requiredCount = TIMEFRAME_COUNTS[timeframe] || 100;
     const tfMs = getTimeframeMs(timeframe);
     const nowMs = Date.now();
     const since = nowMs - requiredCount * tfMs;
 
-    // Check DB
+    // 1. Check DB for existing data
     const dbCandles = await prisma.ohlcv.findMany({
         where: {
             symbol,
@@ -57,105 +55,131 @@ export async function fetchCexData(symbol: string, timeframe: string): Promise<C
         },
     });
 
-    // Check if we have enough data and it's fresh (last candle within 2 periods)
-    let isFresh = false;
+    let fetchSince = since;
+
+    // 2. Check for Open Candle & Invalidate
     if (dbCandles.length > 0) {
-        const lastCandleTs = Number(dbCandles[dbCandles.length - 1].timestamp);
-        if (nowMs - lastCandleTs < 2 * tfMs) {
-            isFresh = true;
+        const lastCandle = dbCandles[dbCandles.length - 1];
+        const lastCandleTs = Number(lastCandle.timestamp);
+
+        // If the last candle's period hasn't finished yet, it's an "open" candle.
+        // We must fetch the latest version of it.
+        // Logic: If (timestamp + duration) > now, it is still active.
+        if (lastCandleTs + tfMs > nowMs) {
+            console.log(`[DataFetcher] Invalidating open candle at ${lastCandleTs} (Now: ${nowMs})`);
+
+            // Delete from DB to avoid staleness (since createMany doesn't update)
+            await prisma.ohlcv.delete({
+                where: {
+                     symbol_timeframe_timestamp: {
+                        symbol,
+                        timeframe,
+                        timestamp: lastCandle.timestamp
+                    }
+                }
+            });
+
+            // Remove from local array
+            dbCandles.pop();
+
+            // Start fetching from this timestamp to get the updated version
+            fetchSince = lastCandleTs;
+        } else {
+            // It is closed. Start fetching from the next period.
+            fetchSince = lastCandleTs + tfMs;
         }
     }
 
-    if (dbCandles.length >= requiredCount * 0.95 && isFresh) {
-        // Use DB data
-        return dbCandles.map((c: Ohlcv) => ({
+    // 3. Fetch from API (Only if needed)
+    let allNewCandles: any[] = [];
+
+    // Only fetch if we are behind
+    if (fetchSince < nowMs) {
+        console.log(`[DataFetcher] Fetching ${symbol} ${timeframe} from API (since ${fetchSince})...`);
+        const exchange = new ccxt.binance({ enableRateLimit: true });
+        let currentSince = fetchSince;
+
+        try {
+            while (currentSince < nowMs) {
+                const candles = await exchange.fetchOHLCV(symbol, timeframe, currentSince, 1000);
+                if (candles.length === 0) break;
+
+                allNewCandles = allNewCandles.concat(candles);
+
+                const lastCandle = candles[candles.length - 1];
+                if (lastCandle && lastCandle[0]) {
+                    currentSince = lastCandle[0] + 1;
+                } else {
+                    break;
+                }
+
+                if (candles.length < 1000) break;
+            }
+        } catch (e) {
+            console.error(`Error fetching data: ${e}`);
+            // If API fails, return what we have from DB
+            if (dbCandles.length > 0) {
+                 return dbCandles.map((c: Ohlcv) => ({
+                    timestamp: Number(c.timestamp),
+                    open: c.open,
+                    high: c.high,
+                    low: c.low,
+                    close: c.close,
+                    volume: c.volume,
+                }));
+            }
+            throw e;
+        }
+    }
+
+    // 4. Batch Insert New Data
+    if (allNewCandles.length > 0) {
+        const formattedCandles = allNewCandles.map(c => ({
+            symbol,
+            timeframe,
+            timestamp: BigInt(c[0]),
+            open: c[1],
+            high: c[2],
+            low: c[3],
+            close: c[4],
+            volume: c[5],
+        }));
+
+        // createMany is faster but doesn't handle duplicates/updates well on SQLite in strict mode.
+        // However, our fetch logic ensures we don't fetch duplicates of what's in DB.
+        // And we deleted the potentially overlapping "open" candle.
+        await prisma.ohlcv.createMany({
+            data: formattedCandles,
+        });
+
+        console.log(`[DataFetcher] Saved ${formattedCandles.length} candles to DB.`);
+    }
+
+    // 5. Return Combined Data (DB + New)
+    const combined = [
+        ...dbCandles.map((c: Ohlcv) => ({
             timestamp: Number(c.timestamp),
             open: c.open,
             high: c.high,
             low: c.low,
             close: c.close,
             volume: c.volume,
-        }));
-    }
+        })),
+        ...allNewCandles.map(c => ({
+            timestamp: c[0],
+            open: c[1],
+            high: c[2],
+            low: c[3],
+            close: c[4],
+            volume: c[5],
+        }))
+    ];
 
-    // Fetch from API
-    const exchange = new ccxt.binance();
-    let allCandles: any[] = [];
-    let currentSince = since;
-
-    try {
-        while (currentSince < nowMs) {
-            const candles = await exchange.fetchOHLCV(symbol, timeframe, currentSince, 1000);
-            if (candles.length === 0) {
-                break;
-            }
-
-            allCandles = allCandles.concat(candles);
-            if (candles.length > 0) {
-                const lastCandle = candles[candles.length - 1];
-                if (lastCandle && lastCandle.length > 0 && lastCandle[0]) {
-                    currentSince = lastCandle[0] + 1;
-                }
-            }
-
-
-
-
-            // Respect rate limit
-            await new Promise(resolve => setTimeout(resolve, exchange.rateLimit));
-
-            if (candles.length < 1000) {
-                break;
-            }
-        }
-    } catch (e) {
-        console.error(`Error fetching data: ${e}`);
-    } finally {
-        // In the node-ccxt library, there is no explicit close method for exchanges.
-    }
-
-    // Format for DB
-    const formattedCandles = allCandles.map(c => ({
-        symbol,
-        timeframe,
-        timestamp: BigInt(c[0]),
-        open: c[1],
-        high: c[2],
-        low: c[3],
-        close: c[4],
-        volume: c[5],
-    }));
-
-    // Upsert to DB
-    for (const candle of formattedCandles) {
-        await prisma.ohlcv.upsert({
-            where: {
-                symbol_timeframe_timestamp: {
-                    symbol: candle.symbol,
-                    timeframe: candle.timeframe,
-                    timestamp: candle.timestamp,
-                }
-            },
-            update: candle,
-            create: candle,
-        });
-    }
-
-
-    // Return array of objects
-    return allCandles.map(c => ({
-        timestamp: c[0],
-        open: c[1],
-        high: c[2],
-        low: c[3],
-        close: c[4],
-        volume: c[5],
-    }));
+    return combined.sort((a, b) => a.timestamp - b.timestamp);
 }
 
 export async function fetchDexData(query: string): Promise<any | null> {
     let url = `https://api.dexscreener.com/latest/dex/search?q=${query}`;
-    // If it looks like an address
     if (query.startsWith('0x') || query.length > 30) {
         url = `https://api.dexscreener.com/latest/dex/tokens/${query}`;
     }
@@ -165,9 +189,8 @@ export async function fetchDexData(query: string): Promise<any | null> {
         if (response.status === 200) {
             const data = response.data;
             const pairs = data.pairs || [];
-            if (pairs.length === 0) {
-                return null;
-            }
+            if (pairs.length === 0) return null;
+
             // Return the most liquid pair
             pairs.sort((a: any, b: any) => parseFloat(b.liquidity?.usd || 0) - parseFloat(a.liquidity?.usd || 0));
             return pairs[0];

@@ -60,6 +60,7 @@ model User {
   xp          Int      @default(0)
   gold        Int      @default(100)
   potions     Int      @default(3)
+  badges      String   @default("") // Comma separated: "SULTAN,HUNTER"
   
   // Equipment
   equippedWeapon String @default("Wooden Stick")
@@ -70,7 +71,9 @@ model User {
   
   // Relations
   inventory   InventoryItem[]
+  listings    MarketListing[]
   stats       UserStats?
+  predictions Prediction[]
   dailyStreak Int      @default(0)
 
   createdAt DateTime @default(now())
@@ -86,6 +89,16 @@ model InventoryItem {
   rarity    String // Common, Rare, Epic, Legendary
   damage    Int
   quantity  Int    @default(1)
+}
+
+// Global Marketplace (Auction House)
+model MarketListing {
+  id          Int      @id @default(autoincrement())
+  sellerId    String
+  seller      User     @relation(fields: [sellerId], references: [id])
+  itemName    String
+  price       Int
+  createdAt   DateTime @default(now())
 }
 
 // Leaderboard Stats
@@ -104,4 +117,29 @@ model RaidBoss {
   hp          Int    @default(10000) // currentHP
   maxHp       Int    @default(10000) // maxHP
   isDead      Boolean @default(false)
+}
+
+// RSS Feed History (Deduplication)
+model FeedHistory {
+  id        Int      @id @default(autoincrement())
+  feedType  String   // 'JOB' or 'NEWS'
+  uniqueId  String   // GUID or URL
+  createdAt DateTime @default(now())
+
+  @@unique([feedType, uniqueId])
+}
+
+// Prediction Market
+model Prediction {
+  id          Int      @id @default(autoincrement())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  channelId   String   @default("")
+  symbol      String   @default("BTC/USDT")
+  direction   String   // UP or DOWN
+  amount      Int      // Bet Amount
+  startPrice  Float    // Price when bet placed
+  startTime   DateTime @default(now())
+  status      String   @default("PENDING") // PENDING, WIN, LOSS
+  resolvedAt  DateTime?
 }
