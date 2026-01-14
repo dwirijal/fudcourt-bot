@@ -71,6 +71,7 @@ model User {
   // Relations
   inventory   InventoryItem[]
   stats       UserStats?
+  predictions Prediction[]
   dailyStreak Int      @default(0)
 
   createdAt DateTime @default(now())
@@ -114,4 +115,18 @@ model FeedHistory {
   createdAt DateTime @default(now())
 
   @@unique([feedType, uniqueId])
+}
+
+// Prediction Market
+model Prediction {
+  id          Int      @id @default(autoincrement())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  symbol      String   @default("BTC/USDT")
+  direction   String   // UP or DOWN
+  amount      Int      // Bet Amount
+  startPrice  Float    // Price when bet placed
+  startTime   DateTime @default(now())
+  status      String   @default("PENDING") // PENDING, WIN, LOSS
+  resolvedAt  DateTime?
 }

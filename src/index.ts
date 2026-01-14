@@ -5,6 +5,7 @@ import path from 'path';
 import { checkFeeds } from './services/feed_service';
 import { updateGasPrices } from './services/gas_service';
 import { startOracle } from './services/market_oracle';
+import { startPredictionService } from './services/prediction_service';
 
 dotenv.config();
 
@@ -53,6 +54,7 @@ client.once('ready', () => {
 
     // --- SERVICES ---
     startOracle(); // Starts the Market Oracle (BTC Monitor)
+    startPredictionService(client); // Starts the Prediction Market Resolution Loop
 
     // --- SCHEDULER ---
 
