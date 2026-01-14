@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { prisma } from '../db';
+import { prisma } from '../../db';
 
 
 export const data = new SlashCommandBuilder()

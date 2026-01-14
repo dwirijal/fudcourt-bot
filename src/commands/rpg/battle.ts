@@ -1,7 +1,8 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
-import { prisma } from '../db';
-import { renderBattleScene, BattleState } from '../utils/CanvasUtils';
-import { getMonster } from '../utils/monsters';
+import { prisma } from '../../db';
+import { renderBattleScene, BattleState } from '../../utils/CanvasUtils';
+import { getMonster } from '../../utils/monsters';
+import { gachaPool } from '../../gacha';
 
 export const data = new SlashCommandBuilder()
     .setName('battle')
@@ -62,6 +63,8 @@ export async function execute(interaction: any) {
     });
 
     // 6. Game Loop
+    let monsterStunned = false;
+
     const collector = message.createMessageComponentCollector({
         componentType: ComponentType.Button,
         time: 60000,
@@ -69,18 +72,81 @@ export async function execute(interaction: any) {
     });
 
     collector.on('collect', async (i: any) => {
-        // Refresh User Data (potions, etc)
-        user = await prisma.user.findUnique({ where: { id: userId } });
+        // Optimization: Rely on local 'user' state logic instead of re-fetching DB every click.
+        // user = await prisma.user.findUnique({ where: { id: userId } });
         if (!user) return;
 
         let log = "";
 
+        // --- MONSTER TURN ---
+        if (battleState.monsterHP > 0) {
+            if (monsterStunned) {
+                log += `\n💫 **STUNNED!** The ${monsterData.name} couldn't move!`;
+                monsterStunned = false;
+            } else {
+                // Dynamic Damage from Monster Data
+                let dmg = Math.floor(Math.random() * (monsterData.damageMax - monsterData.damageMin + 1)) + monsterData.damageMin;
+
+                // CLASS PASSIVE: ROGUE DODGE (25%)
+                if (user.job === 'Rogue' && Math.random() < 0.25) {
+                    dmg = 0;
+                    log += `\n💨 **DODGED!** You avoided the ${monsterData.name}'s attack!`;
+                }
+
+                // CLASS PASSIVE: WARRIOR SHIELD (Flat -3 Dmg)
+                if (user.job === 'Warrior' && dmg > 0) {
+                    dmg = Math.max(1, dmg - 3);
+                }
+
+                // CLASS PASSIVE: PALADIN SHIELD (-15% Dmg)
+                if (user.job === 'Paladin' && dmg > 0) {
+                    dmg = Math.floor(dmg * 0.85);
+                }
+
+                battleState.playerHP -= dmg;
+                if (dmg > 0) log += `\nThe ${monsterData.name} hit you for **${dmg}**!`;
+
+                // CLASS PASSIVE: WARRIOR HEAL (+5 HP/Turn)
+                if (user.job === 'Warrior') {
+                    const healAmt = 5;
+                    battleState.playerHP = Math.min(battleState.maxPlayerHP, battleState.playerHP + healAmt);
+                    log += ` (🛡️ +${healAmt} HP)`;
+                }
+            }
+        } // End Monster Turn Check
+
         // --- PLAYER TURN ---
         if (i.customId === 'attack') {
-            const swordBonus = user.hasSword ? 15 : 0;
-            const dmg = Math.floor(Math.random() * 20) + 10 + swordBonus;
-            battleState.monsterHP -= dmg;
-            log = `You hit for **${dmg}** damage! ${user.hasSword ? "(Sword Bonus!)" : ""}`;
+            const currentWeapon = user.equippedWeapon || "Wooden Stick";
+            const weaponData = gachaPool.find(w => w.name === currentWeapon) || { damage: 2, rarity: 'Common' };
+            const weaponDmg = weaponData.damage;
+
+            // Base Damage 10-20 + Weapon Damage
+            let rng = Math.floor(Math.random() * 20) + 10;
+
+            // CLASS PASSIVE: MAGE CRIT (30% Chance -> 2x Base Dmg)
+            if (user.job === 'Mage' && Math.random() < 0.3) {
+                rng *= 2;
+                log = `🔮 **CRITICAL HIT!** You hit with **${currentWeapon}** for **${rng + weaponDmg}** damage!`;
+            } else {
+                log = `You hit with **${currentWeapon}** for **${rng + weaponDmg}** damage!`;
+            }
+
+            // CLASS PASSIVE: PALADIN SMITE (10% Stun)
+            if (user.job === 'Paladin' && Math.random() < 0.10) {
+                monsterStunned = true;
+                log += `\n🔨 **SMITE!** You stunned the enemy!`;
+            }
+
+            // CLASS PASSIVE: RANGER DOUBLE SHOT (20% Chance)
+            if (user.job === 'Ranger' && Math.random() < 0.20) {
+                const secondDmg = Math.floor(Math.random() * 20) + 10 + weaponDmg;
+                battleState.monsterHP -= secondDmg;
+                log += `\n🏹 **DOUBLE SHOT!** You hit again for **${secondDmg}**!`;
+            }
+
+            const totalDmg = rng + weaponDmg;
+            battleState.monsterHP -= totalDmg;
         }
         else if (i.customId === 'heal') {
             if (user.potions > 0) {
@@ -106,14 +172,6 @@ export async function execute(interaction: any) {
             });
             collector.stop('run');
             return;
-        }
-
-        // --- MONSTER TURN ---
-        if (battleState.monsterHP > 0) {
-            // Dynamic Damage from Monster Data
-            const dmg = Math.floor(Math.random() * (monsterData.damageMax - monsterData.damageMin + 1)) + monsterData.damageMin;
-            battleState.playerHP -= dmg;
-            log += `\nThe ${monsterData.name} hit you for **${dmg}**!`;
         }
 
         // --- CHECK WIN/LOSS ---
@@ -180,7 +238,7 @@ export async function execute(interaction: any) {
         });
     });
 
-    collector.on('end', async (_, reason) => {
+    collector.on('end', async (_: any, reason: string) => {
         if (reason === 'time') {
             await interaction.editReply({
                 content: "⏳ Battle timed out.",

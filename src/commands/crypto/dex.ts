@@ -1,6 +1,8 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import axios from 'axios';
-import { renderTokenCard } from '../utils/CanvasUtils';
+import { renderTokenCard } from '../../utils/CanvasUtils';
+
+const cache = new Map<string, { data: any, timestamp: number }>();
 
 export const data = new SlashCommandBuilder()
     .setName('dex')
@@ -13,17 +15,25 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: any) {
     await interaction.deferReply();
 
-    const query = interaction.options.getString('query');
-
     try {
-        let url = `https://api.dexscreener.com/latest/dex/search?q=${query}`;
-        // If it looks like an address (0x...)
-        if (query.startsWith('0x') && query.length > 30) {
-            url = `https://api.dexscreener.com/latest/dex/tokens/${query}`;
-        }
 
-        const response = await axios.get(url);
-        const pairs = response.data.pairs;
+        const query = interaction.options.getString('query');
+
+        const cacheKey = `dex-${query}`;
+        const cached = cache.get(cacheKey);
+        let pairs;
+
+        if (cached && Date.now() - cached.timestamp < 60 * 1000) { // 1 minute cache for DEX
+            pairs = cached.data;
+        } else {
+            let url = `https://api.dexscreener.com/latest/dex/search?q=${query}`;
+            if (query.startsWith('0x') && query.length > 30) {
+                url = `https://api.dexscreener.com/latest/dex/tokens/${query}`;
+            }
+            const response = await axios.get(url);
+            pairs = response.data.pairs;
+            cache.set(cacheKey, { data: pairs, timestamp: Date.now() });
+        }
 
         if (!pairs || pairs.length === 0) {
             await interaction.editReply(`No DEX data found for "${query}"`);

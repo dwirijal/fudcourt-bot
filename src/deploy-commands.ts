@@ -6,19 +6,25 @@ import path from 'path';
 dotenv.config();
 
 const commands = [];
-const commandsPath = path.join(__dirname, 'commands');
+const foldersPath = path.join(__dirname, 'commands');
 // Ensure commands directory exists
-if (!fs.existsSync(commandsPath)) {
-    fs.mkdirSync(commandsPath);
+if (!fs.existsSync(foldersPath)) {
+    fs.mkdirSync(foldersPath);
 }
 
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.ts') || file.endsWith('.js'));
+const commandFolders = fs.readdirSync(foldersPath).filter(folder => fs.lstatSync(path.join(foldersPath, folder)).isDirectory());
 
 (async () => {
-    for (const file of commandFiles) {
-        const command = await import(path.join(commandsPath, file));
-        if ('data' in command && 'execute' in command) {
-            commands.push(command.data.toJSON());
+    for (const folder of commandFolders) {
+        const commandsPath = path.join(foldersPath, folder);
+        const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.ts') || file.endsWith('.js'));
+
+        for (const file of commandFiles) {
+            const filePath = path.join(commandsPath, file);
+            const command = await import(filePath);
+            if ('data' in command && 'execute' in command) {
+                commands.push(command.data.toJSON());
+            }
         }
     }
 

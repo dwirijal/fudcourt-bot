@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { prisma } from '../db';
+import { prisma } from '../../db';
 
 
 export const data = new SlashCommandBuilder()
@@ -22,6 +22,10 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: any) {
     await interaction.deferReply();
+    if (interaction.channelId !== '1460782848570298495') {
+        await interaction.editReply("❌ This command can only be used in the **Market Channel**!");
+        return;
+    }
     const sub = interaction.options.getSubcommand();
     const userId = interaction.user.id;
 

@@ -124,7 +124,7 @@ function drawHealthBar(ctx: any, x: number, y: number, current: number, max: num
 /**
  * Renders a crypto candlestick chart using @napi-rs/canvas
  */
-export async function renderChart(state: ChartState): Promise<AttachmentBuilder> {
+export async function renderCandlestickChart(state: ChartState): Promise<AttachmentBuilder> {
     const width = state.width || 800;
     const height = state.height || 400;
     const padding = { top: 40, right: 60, bottom: 40, left: 10 };

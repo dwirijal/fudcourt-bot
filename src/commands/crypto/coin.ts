@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import ccxt from 'ccxt';
-import { renderChart } from '../utils/CanvasUtils';
+import { renderCandlestickChart } from '../../utils/CanvasUtils';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -30,34 +30,44 @@ export async function execute(interaction: any) {
     const symbol = rawSymbol.includes('/') ? rawSymbol : `${rawSymbol}/USDT`;
 
     try {
-        // Exchange instance
-        const exchange = new ccxt.binance();
+        // Check Cache
+        const cacheKey = `${symbol}-${timeframe}`;
+        const cached = cache.get(cacheKey);
+        if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) { // 5 minutes
+            console.log(`[Cache Hit] ${cacheKey}`);
+            // Use cached data
+            var candles = cached.data;
+        } else {
+            console.log(`[API Fetch] ${cacheKey}`);
+            const exchange = new ccxt.binance();
+            const ohlcv = await exchange.fetchOHLCV(symbol, timeframe, undefined, 100);
 
-        // Fetch OHLCV
-        // Format: [timestamp, open, high, low, close, volume]
-        const ohlcv = await exchange.fetchOHLCV(symbol, timeframe, undefined, 100);
+            if (!ohlcv || ohlcv.length === 0) {
+                await interaction.editReply(`No data found for ${symbol}. Check the symbol or try again.`);
+                return;
+            }
 
-        if (!ohlcv || ohlcv.length === 0) {
-            await interaction.editReply(`No data found for ${symbol}. Check the symbol or try again.`);
-            return;
+            // Map to object format
+            candles = ohlcv.map(c => ({
+                timestamp: c[0] as number,
+                open: c[1] as number,
+                high: c[2] as number,
+                low: c[3] as number,
+                close: c[4] as number,
+                volume: c[5] as number
+            }));
+
+            // Save to Cache
+            cache.set(cacheKey, { data: candles, timestamp: Date.now() });
         }
 
-        // Map to object format for our Canvas engine
-        const candles = ohlcv.map(c => ({
-            timestamp: c[0] as number,
-            open: c[1] as number,
-            high: c[2] as number,
-            low: c[3] as number,
-            close: c[4] as number,
-            volume: c[5] as number
-        }));
-
         // Render Chart
-        const attachment = await renderChart({
+        const chartState = {
             symbol,
             timeframe,
             candles: candles
-        });
+        };
+        const attachment = await renderCandlestickChart(chartState);
 
         // Current Price info
         const lastCandle = candles[candles.length - 1];

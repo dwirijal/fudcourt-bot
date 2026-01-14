@@ -51,13 +51,57 @@ model CoinGeckoData {
   fetched_at                  BigInt
 }
 
+// Player Data
 model User {
-  id        String   @id // Discord ID
-  gold      Int      @default(0)
-  potions   Int      @default(3)
-  hasSword  Boolean  @default(false)
-  xp        Int      @default(0)
-  level     Int      @default(1)
+  id          String   @id // Discord User ID
+  username    String?  // Optional, for caching display name
+  job         String   @default("Novice") // Warrior, Mage, Rogue (formerly class)
+  level       Int      @default(1)
+  xp          Int      @default(0)
+  gold        Int      @default(100)
+  potions     Int      @default(3)
+  
+  // Equipment
+  equippedWeapon String @default("Wooden Stick")
+  
+  // Economy & Cooldowns
+  lastDaily   DateTime?
+  lastWork    DateTime?
+  
+  // Relations
+  inventory   InventoryItem[]
+  stats       UserStats?
+  dailyStreak Int      @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Inventory System
+model InventoryItem {
+  id        Int    @id @default(autoincrement())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id])
+  itemName  String
+  rarity    String // Common, Rare, Epic, Legendary
+  damage    Int
+  quantity  Int    @default(1)
+}
+
+// Leaderboard Stats
+model UserStats {
+  userId      String @id
+  user        User   @relation(fields: [userId], references: [id])
+  battlesWon  Int    @default(0)
+  bossDamage  Int    @default(0)
+}
+
+// Global Raid Boss State
+model RaidBoss {
+  id          Int    @id @default(1)
+  name        String @default("World Eater")
+  level       Int    @default(1)
+  hp          Int    @default(10000) // currentHP
+  maxHp       Int    @default(10000) // maxHP
+  isDead      Boolean @default(false)
 }
