@@ -1,162 +1,101 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
 import { prisma } from '../../db';
-import { gachaPool } from '../../gacha';
 
 export const data = new SlashCommandBuilder()
     .setName('duel')
-    .setDescription('Challenge another player to a duel for Gold!')
-    .addUserOption(option =>
-        option.setName('opponent')
-            .setDescription('The user to challenge')
-            .setRequired(true))
-    .addIntegerOption(option =>
-        option.setName('amount')
-            .setDescription('Amount of gold to bet')
-            .setRequired(true)
-            .setMinValue(1));
+    .setDescription('Challenge another player to a 1v1 duel (Bet Gold)')
+    .addUserOption(opt => opt.setName('enemy').setDescription('The player to challenge').setRequired(true))
+    .addIntegerOption(opt => opt.setName('bet').setDescription('Amount of Gold to bet').setRequired(true));
 
 export async function execute(interaction: any) {
-    await interaction.deferReply();
-    if (interaction.channelId !== '1460783138237321317') {
-        await interaction.editReply("❌ This command can only be used in the **Town Hall**!");
-        return;
-    }
     const challenger = interaction.user;
-    const opponent = interaction.options.getUser('opponent');
-    const amount = interaction.options.getInteger('amount');
+    const enemy = interaction.options.getUser('enemy');
+    const bet = interaction.options.getInteger('bet');
 
-    if (challenger.id === opponent.id) {
-        await interaction.editReply("❌ You cannot duel yourself!");
-        return;
+    // Basic Validations
+    if (challenger.id === enemy.id) return interaction.reply({ content: "You cannot duel yourself!", ephemeral: true });
+    if (enemy.bot) return interaction.reply({ content: "You cannot duel a bot!", ephemeral: true });
+    if (bet <= 0) return interaction.reply({ content: "Bet must be greater than 0!", ephemeral: true });
+
+    // 1. Check Balances
+    const p1 = await prisma.user.findUnique({ where: { id: challenger.id } });
+    const p2 = await prisma.user.findUnique({ where: { id: enemy.id } });
+
+    if (!p1 || p1.gold < bet) {
+        return interaction.reply({ content: `❌ You don't have enough Gold! (Balance: ${p1?.gold || 0})`, ephemeral: true });
+    }
+    // Note: We can check enemy balance, but strictly speaking, we can just check it when they accept.
+    // But it's polite to check now to avoid spamming poor people.
+    if (!p2 || p2.gold < bet) {
+        return interaction.reply({ content: `❌ **${enemy.username}** doesn't have enough Gold to match your bet.`, ephemeral: true });
     }
 
-    if (opponent.bot) {
-        await interaction.editReply("❌ You cannot duel bots!");
-        return;
-    }
+    // 2. Send Challenge
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId('accept').setLabel('⚔️ ACCEPT DUEL').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('decline').setLabel('Decline').setStyle(ButtonStyle.Secondary)
+    );
 
-    // 1. Check Challenger Funds
-    const challengerData = await prisma.user.findUnique({ where: { id: challenger.id } });
-    if (!challengerData || challengerData.gold < amount) {
-        await interaction.editReply(`❌ You don't have enough gold! (Balance: ${challengerData?.gold || 0})`);
-        return;
-    }
-
-    // 2. Create Challenge UI
-    const row = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('accept')
-                .setLabel('⚔️ ACCEPT DUEL')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId('decline')
-                .setLabel('🏃 DECLINE')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-    const embed = new EmbedBuilder()
-        .setTitle("⚔️ PVP CHALLENGE")
-        .setDescription(`${challenger.username} challenges ${opponent.username} to a duel!`)
-        .addFields(
-            { name: 'Bet Amount', value: `${amount} Gold`, inline: true },
-            { name: 'Challenger Weapon', value: challengerData.equippedWeapon || "Wooden Stick", inline: true }
-        )
-        .setColor(0xFF0000);
-
-    const message = await interaction.editReply({
-        content: `<@${opponent.id}>, do you accept?`,
-        embeds: [embed],
-        components: [row]
+    const msg = await interaction.reply({
+        content: `🔥 **DUEL ALERT!**\n${challenger} challenges ${enemy} for **${bet} Gold**!\n${enemy}, do you accept?`,
+        components: [row],
+        fetchReply: true
     });
 
-    const collector = message.createMessageComponentCollector({
+    const collector = msg.createMessageComponentCollector({
         componentType: ComponentType.Button,
-        time: 30000 // 30 seconds
+        time: 30000
     });
 
     collector.on('collect', async (i: any) => {
-        if (i.user.id !== opponent.id) {
-            await i.reply({ content: "This challenge is not for you!", ephemeral: true });
-            return;
+        // Only Enemy can decide
+        if (i.user.id !== enemy.id) {
+            return i.reply({ content: "This challenge is not for you!", ephemeral: true });
         }
 
         if (i.customId === 'decline') {
-            await i.update({ content: `🚫 ${opponent.username} declined the duel.`, components: [], embeds: [] });
+            await msg.edit({ content: `🏳️ **${enemy.username}** declined the duel.`, components: [] });
             return;
         }
 
         if (i.customId === 'accept') {
-            // 3. Check Opponent Funds
-            const opponentData = await prisma.user.findUnique({ where: { id: opponent.id } });
-            if (!opponentData) { // Should create if not exists, but for duel let's say "not registered"
-                await prisma.user.create({ data: { id: opponent.id } });
+            // 3. PROCESS DUEL
+            // Re-check balances immediately before processing
+            // Use transaction to ensure consistency
+            try {
+                await prisma.$transaction(async (tx) => {
+                    const p1Now = await tx.user.findUnique({ where: { id: challenger.id } });
+                    const p2Now = await tx.user.findUnique({ where: { id: enemy.id } });
+
+                    if (!p1Now || p1Now.gold < bet) throw new Error("Challenger insufficient funds");
+                    if (!p2Now || p2Now.gold < bet) throw new Error("Enemy insufficient funds");
+
+                    // RNG Logic (50/50 for now)
+                    // Future improvement: Add logic for Stats/Weapon
+                    const p1Win = Math.random() > 0.5;
+                    const winnerId = p1Win ? challenger.id : enemy.id;
+                    const loserId = p1Win ? enemy.id : challenger.id;
+                    const winnerName = p1Win ? challenger.username : enemy.username;
+                    const loserName = p1Win ? enemy.username : challenger.username;
+
+                    // Transfer Gold
+                    await tx.user.update({ where: { id: winnerId }, data: { gold: { increment: bet } } });
+                    await tx.user.update({ where: { id: loserId }, data: { gold: { decrement: bet } } });
+
+                    await msg.edit({
+                        content: `💀 **DUEL FINISHED!**\n\n👑 **Winner:** ${winnerName} (+${bet} Gold)\n🥀 **Loser:** ${loserName} (-${bet} Gold)`,
+                        components: []
+                    });
+                });
+            } catch (error: any) {
+                await i.reply({ content: `❌ Duel failed: ${error.message}`, ephemeral: true });
             }
-
-            // Re-fetch to be safe
-            const p2 = await prisma.user.findUnique({ where: { id: opponent.id } });
-
-            if (!p2 || p2.gold < amount) {
-                await i.update({ content: `❌ ${opponent.username} doesn't have enough gold!`, components: [], embeds: [] });
-                return;
-            }
-
-            // --- BATTLE LOGIC ---
-            // Calculate Power: Base (10-20) + Weapon Damage
-            const getPower = (equip: string) => {
-                const weapon = gachaPool.find(w => w.name === equip) || { damage: 2 };
-                const rng = Math.floor(Math.random() * 20) + 10;
-                return rng + weapon.damage;
-            };
-
-            const p1Weapon = challengerData.equippedWeapon || "Wooden Stick";
-            const p2Weapon = p2.equippedWeapon || "Wooden Stick";
-
-            const p1Power = getPower(p1Weapon);
-            const p2Power = getPower(p2Weapon);
-
-            let resultMsg = "";
-            let winnerId = "";
-            let loserId = "";
-
-            if (p1Power >= p2Power) {
-                winnerId = challenger.id;
-                loserId = opponent.id;
-                resultMsg = `🏆 **${challenger.username} WON!**\n` +
-                    `Damage: **${p1Power}** vs **${p2Power}**\n` +
-                    `Weapon: ${p1Weapon}`;
-            } else {
-                winnerId = opponent.id;
-                loserId = challenger.id;
-                resultMsg = `🏆 **${opponent.username} WON!**\n` +
-                    `Damage: **${p2Power}** vs **${p1Power}**\n` +
-                    `Weapon: ${p2Weapon}`;
-            }
-
-            // 4. Transfer Gold
-            await prisma.$transaction([
-                prisma.user.update({
-                    where: { id: winnerId },
-                    data: { gold: { increment: amount } }
-                }),
-                prisma.user.update({
-                    where: { id: loserId },
-                    data: { gold: { decrement: amount } }
-                })
-            ]);
-
-            await i.update({
-                content: resultMsg + `\n\n💰 **${amount} Gold** transferred!`,
-                components: [],
-                embeds: []
-            });
-            collector.stop();
         }
     });
 
-    collector.on('end', async (_: any, reason: string) => {
+    collector.on('end', (_: any, reason: string) => {
         if (reason === 'time') {
-            await interaction.editReply({ content: "⏳ Duel challenge expired.", components: [], embeds: [] });
+            msg.edit({ content: "⏳ Duel offer expired.", components: [] }).catch(() => {});
         }
     });
 }
