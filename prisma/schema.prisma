@@ -24,7 +24,7 @@ model Ohlcv {
 }
 
 model CoinGeckoData {
-  id                          String   @id // coin_id
+  id                          String  @id // coin_id
   symbol                      String
   name                        String
   current_price               Float?
@@ -53,77 +53,84 @@ model CoinGeckoData {
 
 // Player Data
 model User {
-  id          String   @id // Discord User ID
-  username    String?  // Optional, for caching display name
-  job         String   @default("Novice") // Warrior, Mage, Rogue (formerly class)
-  level       Int      @default(1)
-  xp          Int      @default(0)
-  gold        Int      @default(100)
-  potions     Int      @default(3)
-  badges      String   @default("") // Comma separated: "SULTAN,HUNTER"
-  
+  id       String  @id // Discord User ID
+  username String? // Optional, for caching display name
+  job      String  @default("Novice") // Warrior, Mage, Rogue (formerly class)
+  level    Int     @default(1)
+  xp       Int     @default(0)
+  gold     Int     @default(100)
+  potions  Int     @default(3)
+  badges   String  @default("") // Comma separated: "SULTAN,HUNTER"
+
   // Equipment
   equippedWeapon String @default("Wooden Stick")
-  
+
   // Economy & Cooldowns
-  lastDaily   DateTime?
-  lastWork    DateTime?
-  
+  lastDaily DateTime?
+  lastWork  DateTime?
+
   // Relations
   inventory   InventoryItem[]
   listings    MarketListing[]
   stats       UserStats?
   predictions Prediction[]
-  dailyStreak Int      @default(0)
+  dailyStreak Int             @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([gold])
+  @@index([level, xp])
 }
 
 // Inventory System
 model InventoryItem {
-  id        Int    @id @default(autoincrement())
-  userId    String
-  user      User   @relation(fields: [userId], references: [id])
-  itemName  String
-  rarity    String // Common, Rare, Epic, Legendary
-  damage    Int
-  quantity  Int    @default(1)
+  id       Int    @id @default(autoincrement())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  itemName String
+  rarity   String // Common, Rare, Epic, Legendary
+  damage   Int
+  quantity Int    @default(1)
+
+  @@index([userId, itemName])
 }
 
 // Global Marketplace (Auction House)
 model MarketListing {
-  id          Int      @id @default(autoincrement())
-  sellerId    String
-  seller      User     @relation(fields: [sellerId], references: [id])
-  itemName    String
-  price       Int
-  createdAt   DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  sellerId  String
+  seller    User     @relation(fields: [sellerId], references: [id])
+  itemName  String
+  price     Int
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 // Leaderboard Stats
 model UserStats {
-  userId      String @id
-  user        User   @relation(fields: [userId], references: [id])
-  battlesWon  Int    @default(0)
-  bossDamage  Int    @default(0)
+  userId     String @id
+  user       User   @relation(fields: [userId], references: [id])
+  battlesWon Int    @default(0)
+  bossDamage Int    @default(0)
 }
 
 // Global Raid Boss State
 model RaidBoss {
-  id          Int    @id @default(1)
-  name        String @default("World Eater")
-  level       Int    @default(1)
-  hp          Int    @default(10000) // currentHP
-  maxHp       Int    @default(10000) // maxHP
-  isDead      Boolean @default(false)
+  id     Int     @id @default(1)
+  name   String  @default("World Eater")
+  level  Int     @default(1)
+  hp     Int     @default(10000) // currentHP
+  maxHp  Int     @default(10000) // maxHP
+  isDead Boolean @default(false)
 }
 
 // RSS Feed History (Deduplication)
 model FeedHistory {
   id        Int      @id @default(autoincrement())
-  feedType  String   // 'JOB' or 'NEWS'
-  uniqueId  String   // GUID or URL
+  feedType  String // 'JOB' or 'NEWS'
+  uniqueId  String // GUID or URL
   createdAt DateTime @default(now())
 
   @@unique([feedType, uniqueId])
@@ -131,15 +138,17 @@ model FeedHistory {
 
 // Prediction Market
 model Prediction {
-  id          Int      @id @default(autoincrement())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  channelId   String   @default("")
-  symbol      String   @default("BTC/USDT")
-  direction   String   // UP or DOWN
-  amount      Int      // Bet Amount
-  startPrice  Float    // Price when bet placed
-  startTime   DateTime @default(now())
-  status      String   @default("PENDING") // PENDING, WIN, LOSS
-  resolvedAt  DateTime?
+  id         Int       @id @default(autoincrement())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  channelId  String    @default("")
+  symbol     String    @default("BTC/USDT")
+  direction  String // UP or DOWN
+  amount     Int // Bet Amount
+  startPrice Float // Price when bet placed
+  startTime  DateTime  @default(now())
+  status     String    @default("PENDING") // PENDING, WIN, LOSS
+  resolvedAt DateTime?
+
+  @@index([status, startTime])
 }
