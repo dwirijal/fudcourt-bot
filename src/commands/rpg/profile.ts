@@ -1,7 +1,8 @@
 import { SlashCommandBuilder, AttachmentBuilder } from 'discord.js';
-import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import { prisma } from '../../db';
 import { getXpCap, getMaxHp } from '../../utils/rpg';
+import { getCachedAvatar } from '../../utils/avatarCache';
 
 export const data = new SlashCommandBuilder()
     .setName('profile')
@@ -54,7 +55,7 @@ export async function execute(interaction: any) {
     // --- AVATAR ---
     try {
         const avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 256 });
-        const avatar = await loadImage(avatarURL);
+        const avatar = await getCachedAvatar(avatarURL);
 
         ctx.save();
         ctx.beginPath();
